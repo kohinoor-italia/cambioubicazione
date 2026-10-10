@@ -1,8 +1,7 @@
 {
   "name": "Abbassamento",
   "short_name": "Abbassamento",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#1c2226",
   "theme_color": "#1c2226",
