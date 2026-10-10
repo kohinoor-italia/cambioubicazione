@@ -540,7 +540,9 @@ function renderTasks(){
   const term = $('tasksSearch').value.trim().toLowerCase();
   if (term) list = list.filter(t => (t.art + ' ' + t.desc + ' ' + t.dest + ' ' + t.moves.map(m => m.ubi).join(' ')).toLowerCase().includes(term));
   if (S.sort === 'route') list = [...list].sort((a, b) => a.dest.localeCompare(b.dest));
-  S.viewTasks = list;   // lista mostrata (filtri, ricerca, ordine) = quella stampata nel PDF
+  // PDF: pagine di lavoro = attività visibili ancora da fare; ultima pagina = tutte quelle completate / con problemi
+  S.viewTasks = list.filter(t => st(t) === 'todo');
+  S.statusTasks = (S.sort === 'route' ? [...res.tasks].sort((a, b) => a.dest.localeCompare(b.dest)) : res.tasks).filter(t => st(t) !== 'todo');
 
   if (!S.stock.length) $('tasksList').innerHTML = '<div class="msg info">Carica la giacenza (scheda Giacenza) o genera dati demo.</div>';
   else if (!list.length) $('tasksList').innerHTML = '<p class="muted">Nessuna attività in questa vista.</p>';
@@ -620,7 +622,9 @@ $('btnCatReload').onclick = async () => { try { await loadCatalog(); renderAll()
 /* ================= PDF ATTIVITÀ ================= */
 function makePdf(){
   const list = S.viewTasks || [];
-  if (!list.length) return banner('Nessuna attività da stampare.', 'err');
+  const done = (S.statusTasks || []).filter(t => S.status[t.id] === 'done');
+  const prob = (S.statusTasks || []).filter(t => S.status[t.id] === 'problem');
+  if (!list.length && !done.length && !prob.length) return banner('Nessuna attività da stampare.', 'err');
   if (!window.jspdf) return banner('Libreria PDF non caricata. Controlla la connessione e ricarica la pagina.', 'err');
   const win = window.open('', '_blank');   // se deschide subito (în gestul de click), altfel iPhone-ul blochează fereastra
   if (win) try { win.document.write('<p style="font-family:sans-serif">Generazione PDF…</p>'); } catch(e){}
@@ -634,13 +638,15 @@ function makePdf(){
     arr.forEach(([txt, bold]) => { doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.text(txt, x, yy); x += doc.getTextWidth(txt); });
   };
   let y = M;
-  doc.setTextColor(0); doc.setFont('helvetica', 'bold'); doc.setFontSize(20);
-  doc.text('Abbassamento - foglio di lavoro', M, y + 6);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90);
-  doc.text('Magazzino KOH-I-NOOR  |  ' + when, M, y + 12);
-  doc.text(`${list.length} attività  |  ${totPos} posizioni da liberare  |  ${totPz} pezzi da spostare`, M, y + 17);
-  doc.setTextColor(0); doc.setDrawColor(0); doc.setLineWidth(.6); doc.line(M, y + 21, W - M, y + 21);
-  y += 26;
+  if (list.length){
+    doc.setTextColor(0); doc.setFont('helvetica', 'bold'); doc.setFontSize(20);
+    doc.text('Abbassamento - foglio di lavoro', M, y + 6);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90);
+    doc.text('Magazzino KOH-I-NOOR  |  ' + when, M, y + 12);
+    doc.text(`${list.length} attività  |  ${totPos} posizioni da liberare  |  ${totPz} pezzi da spostare`, M, y + 17);
+    doc.setTextColor(0); doc.setDrawColor(0); doc.setLineWidth(.6); doc.line(M, y + 21, W - M, y + 21);
+    y += 26;
+  }
 
   list.forEach((t, i) => {
     const h = 14 + (t.moves.length + 1) * 7 + 6 + 3;
@@ -675,6 +681,46 @@ function makePdf(){
       ['    Totale: ', false], [`${t.after} / ${t.cap} pz`, true]], 10);
     y = top + h + 4;
   });
+
+  if (done.length || prob.length){
+    if (list.length) doc.addPage();
+    let sy = M;
+    doc.setTextColor(0); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+    doc.text('Riepilogo attività completate e con problemi', M, sy + 6);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90);
+    doc.text(`Magazzino KOH-I-NOOR  |  ${when}  |  ${done.length} completate  |  ${prob.length} con problemi`, M, sy + 12);
+    doc.setTextColor(0); doc.setDrawColor(0); doc.setLineWidth(.6); doc.line(M, sy + 16, W - M, sy + 16);
+    sy += 21;
+    const section = (title, arr, red) => {
+      if (!arr.length) return;
+      if (sy + 22 > H - M - FOOT){ doc.addPage(); sy = M; }
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
+      if (red) doc.setTextColor(179, 38, 30); else doc.setTextColor(31, 122, 77);
+      doc.text(`${title} (${arr.length})`, M, sy + 5); doc.setTextColor(0); sy += 9;
+      arr.forEach(t => {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+        const lines = doc.splitTextToSize('Prelevate da: ' + t.moves.map(m => `${m.ubi} (${m.qty})`).join(', '), W - 2 * M - 6);
+        const h = 13 + lines.length * 3.6 + (red ? 6 : 0);
+        if (sy + h > H - M - FOOT){ doc.addPage(); sy = M; }
+        doc.setTextColor(0); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text(t.dest, M + 2, sy + 5);
+        doc.setFontSize(10); doc.text(t.art, M + 36, sy + 5);
+        doc.text(`${t.total} pz  -  ${t.freed} pos.`, W - M - 2, sy + 5, {align: 'right'});
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(90);
+        doc.text(String(doc.splitTextToSize(t.desc || '', W - 2 * M - 80)[0] || ''), M + 36, sy + 9);
+        doc.text(lines, M + 2, sy + 13);
+        if (red){
+          const ny = sy + 13 + lines.length * 3.6 + 2.5;
+          doc.setTextColor(0); doc.setFontSize(9); doc.text('Nota:', M + 2, ny);
+          doc.setDrawColor(150); doc.setLineWidth(.2); doc.line(M + 12, ny + .5, W - M - 2, ny + .5);
+        }
+        doc.setTextColor(0); doc.setDrawColor(190); doc.setLineWidth(.2); doc.line(M, sy + h - 1, W - M, sy + h - 1);
+        sy += h;
+      });
+      sy += 4;
+    };
+    section('Completate', done, false);
+    section('Con problemi', prob, true);
+  }
 
   const n = doc.getNumberOfPages();
   for (let p = 1; p <= n; p++){
