@@ -567,11 +567,13 @@ function renderCatalog(){
     return !lev || p[3] === lev;
   });
   const shown = rows.slice(0, 120);
-  $('catTable').innerHTML = `<thead><tr><th>Articolo</th><th>Descrizione</th><th>Casella</th><th class="num">Cap. max (pz)</th></tr></thead><tbody>` +
-    shown.map(r => `<tr><td><b>${esc(r.articolo)}</b></td><td>${esc(r.descrizione)}</td><td>${esc(r.ubicazione)}</td>
+  $('catTable').innerHTML = `<thead><tr><th>Articolo</th><th>Casella</th><th class="num">Cap. max (pz)</th></tr></thead><tbody>` +
+    shown.map(r => `<tr><td><b>${esc(r.articolo)}</b>${r.descrizione ? `<div class="muted" style="font-size:13px;line-height:1.25">${esc(r.descrizione)}</div>` : ''}</td><td>${esc(r.ubicazione)}</td>
       <td class="num"><input type="number" min="1" inputmode="numeric" class="${r.cap_max ? '' : 'missing'}" value="${r.cap_max || ''}" data-art="${esc(r.articolo)}" ${S.noCapCol ? 'disabled' : ''}></td></tr>`).join('') + '</tbody>';
   $('catMore').textContent = rows.length > shown.length ? `Visualizzati ${shown.length} di ${fmt(rows.length)} risultati. Restringi i filtri.` : `${fmt(rows.length)} risultati`;
 }
+
+
 function renderStock(){
   $('stockInfo').innerHTML = S.stock.length
     ? `<div class="msg ${S.demo ? 'demo' : 'info'}">${esc(S.stockName)} · ${fmt(S.stock.length)} righe · ${S.stockTime ? new Date(S.stockTime).toLocaleString('it-IT', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—'}</div>`
