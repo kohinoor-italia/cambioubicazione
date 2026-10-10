@@ -18,12 +18,12 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 var(--fb)}
 button,input,select{font:inherit;color:inherit}
-header{background:var(--ink);color:#fff;padding:14px 16px 18px;position:relative}
+header{background:var(--ink);color:#fff;padding:10px 14px 16px;position:relative}
 header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:8px;
   background:repeating-linear-gradient(-45deg,var(--hazard) 0 12px,var(--ink) 12px 24px)}
-header h1{margin:0;font:700 26px/1 var(--fh);letter-spacing:.02em}
-header .sub{color:#aeb9bf;font-size:13px;margin-top:4px}
-#conn{position:absolute;right:14px;top:14px;font-size:13px;display:flex;align-items:center;gap:6px;color:#aeb9bf}
+header h1{margin:0;font:700 22px/1 var(--fh);letter-spacing:.04em;text-transform:uppercase}
+header .sub{color:#8fa0a8;font-size:11.5px;margin-top:3px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100% - 110px)}
+#conn{position:absolute;right:14px;top:10px;font-size:12px;display:flex;align-items:center;gap:6px;color:#aeb9bf}
 #conn::before{content:"";width:10px;height:10px;border-radius:50%;background:#8a979e}
 #conn.ok::before{background:#3ecf8e} #conn.bad::before{background:#ff5a4f}
 #conn.bad{color:#ff9a92}
@@ -90,6 +90,11 @@ td input.missing{border-color:var(--hazard)}
 .tbar .btn{min-height:38px;padding:6px 12px}
 .seg{flex-wrap:nowrap;overflow-x:auto}
 .seg button{flex:none;white-space:nowrap;padding:4px 12px}
+.seg{scrollbar-width:none;padding:3px 0;margin-top:-3px}
+.seg::-webkit-scrollbar{display:none}
+.seg.fr{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
+.seg.fl{-webkit-mask-image:linear-gradient(90deg,transparent,#000 36px);mask-image:linear-gradient(90deg,transparent,#000 36px)}
+.seg.fl.fr{-webkit-mask-image:linear-gradient(90deg,transparent,#000 36px,#000 calc(100% - 36px),transparent);mask-image:linear-gradient(90deg,transparent,#000 36px,#000 calc(100% - 36px),transparent)}
 @media (max-width:520px){.dest{font-size:26px}.step{flex-direction:column;gap:2px}}
 @media (prefers-reduced-motion:no-preference){details.task[open] .steps{animation:in .15s ease-out}@keyframes in{from{opacity:.4}to{opacity:1}}}
 </style>
@@ -476,7 +481,9 @@ function genDemo(){
 function renderAll(){ renderCatalogInfo(); renderCatalog(); renderStock(); renderTasks(); renderHeader(); }
 function renderHeader(){
   const last = S.catalog.reduce((m, r) => r.uploaded_at > m ? r.uploaded_at : m, '');
-  $('hdrSub').textContent = 'Magazzino KOH-I-NOOR' + (last ? ' · catalogo aggiornato il ' + fdt(last) : '');
+  const short = last ? new Date(last).toLocaleString('it-IT', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
+  $('hdrSub').textContent = 'KOH-I-NOOR' + (short ? ' · catalogo ' + short : '');
+
 }
 function renderCatalogInfo(){
   const art = S.catalog.filter(r => r.articolo);
@@ -596,6 +603,17 @@ $('tasksFilter').onclick = e => {
   renderTasks();
 };
 $('tasksSort').onchange = e => { S.sort = e.target.value; renderTasks(); };
+(function(){
+  const seg = $('tasksFilter');
+  const upd = () => {
+    seg.classList.toggle('fl', seg.scrollLeft > 2);
+    seg.classList.toggle('fr', seg.scrollLeft + seg.clientWidth < seg.scrollWidth - 2);
+  };
+  seg.addEventListener('scroll', upd, {passive: true});
+  if (window.ResizeObserver) new ResizeObserver(upd).observe(seg);
+  window.addEventListener('resize', upd);
+  upd();
+})();
 $('tasksSearch').oninput = renderTasks;
 $('stockSearch').oninput = renderStock;
 $('catSearch').oninput = renderCatalog;
