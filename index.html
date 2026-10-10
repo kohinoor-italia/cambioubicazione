@@ -23,6 +23,8 @@ header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:8px;
   background:repeating-linear-gradient(-45deg,var(--hazard) 0 12px,var(--ink) 12px 24px)}
 header h1{margin:0;font:700 22px/1 var(--fh);letter-spacing:.04em;text-transform:uppercase}
 header .sub{color:#8fa0a8;font-size:11.5px;margin-top:3px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100% - 110px)}
+header .sub b{color:var(--hazard);font-weight:600}
+header .sub .dim{opacity:.6}
 #conn{position:absolute;right:14px;top:10px;font-size:12px;display:flex;align-items:center;gap:6px;color:#aeb9bf}
 #conn::before{content:"";width:10px;height:10px;border-radius:50%;background:#8a979e}
 #conn.ok::before{background:#3ecf8e} #conn.bad::before{background:#ff5a4f}
@@ -505,7 +507,11 @@ function renderAll(){ renderCatalogInfo(); renderCatalog(); renderStock(); rende
 function renderHeader(){
   const last = S.catalog.reduce((m, r) => r.uploaded_at > m ? r.uploaded_at : m, '');
   const short = last ? new Date(last).toLocaleString('it-IT', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '';
-  $('hdrSub').textContent = 'KOH-I-NOOR' + (short ? ' · catalogo ' + short : '');
+  const fmtS = d => new Date(d).toLocaleString('it-IT', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'});
+  const gi = S.stock.length && S.stockTime
+    ? `<b>giacenza ${S.demo ? 'demo ' : ''}${fmtS(S.stockTime)}</b>`
+    : `<b>nessuna giacenza</b>`;
+  $('hdrSub').innerHTML = `KOH-I-NOOR · ${gi}` + (short ? ` <span class="dim">· catalogo ${short}</span>` : '');
 
 }
 function renderCatalogInfo(){
