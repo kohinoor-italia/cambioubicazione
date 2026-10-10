@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abassare & Compactare</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --ink:#1c2226; --bg:#e4e8ea; --card:#fff; --line:#c8d0d4; --mute:#5b6870;
+  --hazard:#f5b700; --ok:#1f7a4d; --okbg:#e2f3ea; --bad:#b3261e; --badbg:#fbe6e4; --info:#1d5f8c;
+  --fh:'Barlow Condensed','Arial Narrow',Arial,sans-serif; --fb:'Barlow',system-ui,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 var(--fb)}
+button,input,select{font:inherit;color:inherit}
+header{background:var(--ink);color:#fff;padding:14px 16px 18px;position:relative}
+header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:8px;
+  background:repeating-linear-gradient(-45deg,var(--hazard) 0 12px,var(--ink) 12px 24px)}
+header h1{margin:0;font:700 26px/1 var(--fh);letter-spacing:.02em}
+header .sub{color:#aeb9bf;font-size:13px;margin-top:4px}
+nav{display:flex;gap:4px;padding:10px 12px 0;max-width:980px;margin:auto}
+nav button{flex:1;padding:12px 8px;border:0;border-radius:8px 8px 0 0;background:#cfd6d9;font:600 17px var(--fh);letter-spacing:.03em;cursor:pointer}
+nav button[aria-selected=true]{background:var(--card)}
+main{max-width:980px;margin:auto;padding:0 12px 60px}
+.panel{background:var(--card);border-radius:0 0 10px 10px;padding:14px}
+.hide{display:none!important}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{border:2px solid var(--ink);background:var(--card);border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;min-height:44px}
+.btn.pri{background:var(--hazard);border-color:var(--ink)}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.bad{background:var(--card);border-color:var(--bad);color:var(--bad)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--info);outline-offset:2px}
+input[type=search],input[type=number],select{border:2px solid var(--line);border-radius:8px;padding:9px 10px;background:#fff;min-height:44px}
+input[type=search]{flex:1;min-width:140px}
+.box{border:1px solid var(--line);border-radius:10px;padding:12px;margin:0 0 12px}
+.box h2{margin:0 0 6px;font:700 20px var(--fh);letter-spacing:.02em}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:8px 0}
+.kv div{background:var(--bg);border-radius:8px;padding:8px 10px}
+.kv b{display:block;font:700 24px var(--fh)}
+.kv span{font-size:13px;color:var(--mute)}
+.msg{padding:10px 12px;border-radius:8px;margin:0 0 12px;font-size:15px}
+.msg.err{background:var(--badbg);color:var(--bad)} .msg.ok{background:var(--okbg);color:var(--ok)} .msg.info{background:#e3eef6;color:var(--info)}
+.msg.demo{background:var(--hazard);color:var(--ink);font-weight:600}
+.muted{color:var(--mute);font-size:14px}
+/* task cards */
+details.task{border:2px solid var(--line);border-radius:10px;margin:0 0 10px;background:#fff}
+details.task[open]{border-color:var(--ink)}
+details.task.done{border-color:var(--ok);background:var(--okbg)}
+details.task.problem{border-color:var(--bad);background:var(--badbg)}
+details.task summary{list-style:none;cursor:pointer;padding:12px;display:grid;grid-template-columns:1fr auto;gap:4px 12px}
+details.task summary::-webkit-details-marker{display:none}
+.dest{font:700 30px/1 var(--fh);letter-spacing:.04em}
+.art{font-weight:600}
+.desc{color:var(--mute);font-size:14px;grid-column:1/2}
+.chips{display:flex;gap:6px;align-items:center;grid-column:2/3;grid-row:1/3;flex-direction:column;align-items:flex-end;justify-content:center}
+.chip{background:var(--ink);color:#fff;border-radius:6px;padding:3px 9px;font:700 18px var(--fh);white-space:nowrap}
+.chip.free{background:var(--hazard);color:var(--ink)}
+.steps{padding:0 12px 12px}
+.step{display:flex;gap:10px;align-items:baseline;padding:10px 0;border-top:1px dashed var(--line)}
+.step .loc{font:700 22px var(--fh);letter-spacing:.04em;min-width:120px}
+.step .act{flex:1}
+.tag{display:inline-block;background:var(--hazard);border-radius:5px;padding:1px 7px;font-weight:700;font-size:13px}
+.tag.warn{background:var(--badbg);color:var(--bad)}
+.acts{display:flex;gap:8px;flex-wrap:wrap;padding-top:8px}
+.acts .btn{flex:1;min-width:150px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-weight:600;color:var(--mute)}
+td.num,th.num{text-align:right}
+td input{width:90px;padding:6px 8px;min-height:36px}
+td input.missing{border-color:var(--hazard)}
+.tablewrap{overflow-x:auto}
+.warnlist{max-height:180px;overflow:auto;font-size:14px;margin:6px 0 0;padding-left:18px}
+.seg{display:flex;gap:4px;flex-wrap:wrap}
+.seg button{border:2px solid var(--line);background:#fff;border-radius:999px;padding:6px 14px;cursor:pointer;font-weight:600}
+.seg button[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:#fff}
+@media (max-width:520px){.dest{font-size:26px}.step{flex-direction:column;gap:2px}}
+@media (prefers-reduced-motion:no-preference){details.task[open] .steps{animation:in .15s ease-out}@keyframes in{from{opacity:.4}to{opacity:1}}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Abassare & Compactare</h1>
+  <div class="sub" id="hdrSub">Depozit KOH-I-NOOR</div>
+</header>
+<nav role="tablist">
+  <button role="tab" aria-selected="true" data-tab="tasks">Sarcini</button>
+  <button role="tab" aria-selected="false" data-tab="stock">Stoc</button>
+  <button role="tab" aria-selected="false" data-tab="catalog">Catalog</button>
+</nav>
+<main>
+  <div id="banner"></div>
+
+  <!-- SARCINI -->
+  <section class="panel" id="tab-tasks">
+    <div id="tasksSummary"></div>
+    <div class="row" style="margin-bottom:10px">
+      <input type="search" id="tasksSearch" placeholder="Caută articol sau ubicazione">
+      <select id="tasksSort" aria-label="Sortare">
+        <option value="prio">Sortare: prioritate</option>
+        <option value="route">Sortare: ordine ubicazioni</option>
+      </select>
+    </div>
+    <div class="seg" id="tasksFilter" style="margin-bottom:12px">
+      <button data-f="all" aria-pressed="true">Toate</button>
+      <button data-f="todo" aria-pressed="false">De făcut</button>
+      <button data-f="done" aria-pressed="false">Finalizate</button>
+      <button data-f="problem" aria-pressed="false">Probleme</button>
+    </div>
+    <div id="tasksList"></div>
+    <div id="tasksWarn"></div>
+  </section>
+
+  <!-- STOC -->
+  <section class="panel hide" id="tab-stock">
+    <div class="box">
+      <h2>Stoc curent</h2>
+      <p class="muted">Fișier .xlsx sau .csv cu coloanele: Articolo, Ubicazione, Cantitate.</p>
+      <div class="row">
+        <label class="btn pri">Încarcă stoc<input type="file" id="stockFile" accept=".xlsx,.xls,.csv" hidden></label>
+        <button class="btn" id="btnDemo">Generează date demo</button>
+        <button class="btn bad" id="btnClearStock">Șterge stocul</button>
+      </div>
+      <div id="stockInfo" style="margin-top:10px"></div>
+    </div>
+    <div class="row" style="margin-bottom:8px"><input type="search" id="stockSearch" placeholder="Caută în stoc"></div>
+    <div class="tablewrap"><table id="stockTable"></table></div>
+  </section>
+
+  <!-- CATALOG -->
+  <section class="panel hide" id="tab-catalog">
+    <div class="box">
+      <h2>Catalog articole / caselle</h2>
+      <div id="catInfo"></div>
+      <p class="muted">Fișier .xlsx cu coloanele: Cod Magazzino, Cod ubicazione, Articolo, Descrizione (opțional: Capacitate). Lista existentă se înlocuiește complet; capacitățile deja setate se păstrează pe cod articol.</p>
+      <div class="row">
+        <label class="btn pri">Încarcă catalog (.xlsx)<input type="file" id="catFile" accept=".xlsx,.xls" hidden></label>
+        <button class="btn" id="btnCatDownload">Descarcă catalog (.xlsx)</button>
+        <button class="btn" id="btnCapFill">Capacitate pentru toate cele goale</button>
+        <button class="btn" id="btnCatReload">Reîncarcă</button>
+      </div>
+      <div id="catPreview" style="margin-top:10px"></div>
+    </div>
+    <div class="row" style="margin-bottom:8px"><input type="search" id="catSearch" placeholder="Caută articol, descriere sau ubicazione"></div>
+    <div class="tablewrap"><table id="catTable"></table></div>
+    <p class="muted" id="catMore"></p>
+  </section>
+</main>
+
+<script>
+/* ================= CONFIG ================= */
+const SB_URL = 'https://fndjrfieitieqzafhyzz.supabase.co';
+const SB_KEY = 'sb_publishable_bHDKjiKAVHqW199ICw7i2g_O3olYMAr';
+const TABLE  = 'articoli';
+
+/* ================= ALGORITM (pur, testabil) ================= */
+/*ALGO-START*/
+// Alege subsetul de scorte care încape în "rem" bucăți.
+// P1: număr maxim de poziții eliberate; P2: cantitate maximă mutată.
+function solveSubset(rem, items){
+  let it = items.filter(x => x.qty > 0 && x.qty <= rem).sort((a,b) => a.qty - b.qty);
+  if (it.length > 24) it = it.slice(0, 24);          // limită de siguranță (cele mai mici 24)
+  let best = null, nodes = 0;
+  const chosen = [];
+  (function rec(i, n, sum){
+    if (++nodes > 2000000) return;
+    if (n > 0 && (!best || n > best.n || (n === best.n && sum > best.sum))) best = {n, sum, pick: chosen.slice()};
+    // margine superioară: câte elemente mai pot încăpea (cele mai mici primele)
+    let s = sum, k = 0;
+    for (let j = i; j < it.length; j++){ if (s + it[j].qty > rem) break; s += it[j].qty; k++; }
+    if (best && (n + k < best.n || (n + k === best.n && best.sum === rem))) return;
+    for (let j = i; j < it.length; j++){
+      if (sum + it[j].qty > rem) break;
+      chosen.push(it[j]); rec(j + 1, n + 1, sum + it[j].qty); chosen.pop();
+    }
+  })(0, 0, 0);
+  return best;
+}
+
+// catalog: Map(articol -> {ubi, desc, cap})   stock: [{art, ubi, qty}]
+function computeTasks(catalog, stock, capFallback){
+  const byArt = new Map(), byLoc = new Map();
+  for (const r of stock){
+    if (!(r.qty > 0)) continue;
+    if (!byArt.has(r.art)) byArt.set(r.art, new Map());
+    const m = byArt.get(r.art); m.set(r.ubi, (m.get(r.ubi) || 0) + r.qty);
+    if (!byLoc.has(r.ubi)) byLoc.set(r.ubi, new Set());
+    byLoc.get(r.ubi).add(r.art);
+  }
+  const tasks = [], noCatalog = [], noCap = [], full = [], noFit = [];
+  for (const [art, locs] of byArt){
+    const c = catalog.get(art);
+    if (!c){ noCatalog.push(art); continue; }
+    const cap = c.cap || (capFallback && capFallback[art]) || null;
+    const scorte = [...locs].filter(([u]) => u !== c.ubi).map(([ubi, qty]) => ({ubi, qty}));
+    if (!scorte.length) continue;
+    if (!cap){ noCap.push(art); continue; }
+    const casellaQty = locs.get(c.ubi) || 0;
+    const rem = cap - casellaQty;
+    if (rem <= 0){ full.push(art); continue; }
+    const res = solveSubset(rem, scorte);
+    if (!res){ noFit.push(art); continue; }
+    const moves = res.pick.map(p => ({ubi: p.ubi, qty: p.qty, shared: byLoc.get(p.ubi).size > 1}))
+                          .sort((a,b) => a.ubi.localeCompare(b.ubi));
+    tasks.push({
+      id: art + '|' + moves.map(m => m.ubi + ':' + m.qty).join(',') + '>' + c.ubi,
+      art, desc: c.desc || '', dest: c.ubi, cap, casellaQty,
+      moves, total: res.sum, freed: res.n, after: casellaQty + res.sum
+    });
+  }
+  tasks.sort((a,b) => b.freed - a.freed || b.total - a.total || a.art.localeCompare(b.art));
+  return {tasks, noCatalog, noCap, full, noFit};
+}
+/*ALGO-END*/
+
+/* ================= STARE ================= */
+const S = {
+  catalog: [], noCapCol: false, loadedOnce: false,
+  stock: [], stockName: '', stockTime: null,
+  demo: false, demoCap: {},
+  filter: 'all', sort: 'prio', open: new Set(), pendingCat: null,
+  status: {}
+};
+try { S.status = JSON.parse(localStorage.getItem('abc_status') || '{}'); } catch(e){}
+try {
+  const st = JSON.parse(localStorage.getItem('abc_stock') || 'null');
+  if (st){ S.stock = st.rows; S.stockName = st.name; S.stockTime = st.time; }
+} catch(e){}
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => Number(n).toLocaleString('ro-RO');
+const fdt = d => d ? new Date(d).toLocaleString('ro-RO', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+const q = v => '"' + String(v).replace(/\\/g,'\\\\').replace(/"/g,'\\"') + '"';
+
+function banner(text, kind){ $('banner').innerHTML = text ? `<div class="msg ${kind||'info'}" style="margin-top:12px">${text}</div>` : ''; }
+
+/* ================= SUPABASE (REST) ================= */
+async function sb(path, opt = {}){
+  const res = await fetch(SB_URL + '/rest/v1/' + path, {
+    ...opt, headers: {apikey: SB_KEY, 'Content-Type': 'application/json', ...(opt.headers || {})}
+  });
+  if (!res.ok){
+    let t = ''; try { t = (await res.json()).message || ''; } catch(e){}
+    throw new Error(`${res.status} ${t}`.trim());
+  }
+  return res;
+}
+async function fetchAll(select){
+  const out = [], step = 1000;
+  for (let from = 0; ; from += step){
+    const res = await sb(`${TABLE}?select=${select}&order=id`, {headers: {Range: `${from}-${from + step - 1}`, 'Range-Unit': 'items'}});
+    const part = await res.json();
+    out.push(...part);
+    if (part.length < step) break;
+  }
+  return out;
+}
+async function loadCatalog(){
+  try {
+    S.catalog = await fetchAll('id,cod_magazzino,ubicazione,articolo,descrizione,cap_max,batch_id,uploaded_at');
+    S.noCapCol = false;
+  } catch(e){
+    if (/cap_max/i.test(e.message)){
+      S.catalog = await fetchAll('id,cod_magazzino,ubicazione,articolo,descrizione,batch_id,uploaded_at');
+      S.noCapCol = true;
+    } else throw e;
+  }
+  S.loadedOnce = true;
+}
+
+/* ================= EXCEL ================= */
+const norm = k => String(k).toLowerCase().replace(/[^a-z]/g, '');
+function pick(row, names){
+  for (const k of Object.keys(row)) if (names.includes(norm(k))) return row[k];
+  return undefined;
+}
+const clean = v => { const s = String(v ?? '').trim(); return s === '' ? null : s; };
+async function readSheet(file){
+  const wb = XLSX.read(await file.arrayBuffer(), {type: 'array'});
+  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval: ''});
+}
+function parseNum(v){
+  if (typeof v === 'number') return v;
+  const n = Number(String(v).replace(/\s/g, '').replace(',', '.'));
+  return isFinite(n) ? n : NaN;
+}
+
+/* ================= CATALOG: upload & înlocuire ================= */
+function catMap(){
+  const m = new Map();
+  for (const r of S.catalog) if (r.articolo) m.set(r.articolo, {ubi: r.ubicazione, desc: r.descrizione, cap: r.cap_max || null});
+  return m;
+}
+async function onCatFile(e){
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try {
+    const raw = await readSheet(f);
+    const rows = [];
+    for (const r of raw){
+      const ubi = clean(pick(r, ['codubicazione','ubicazione','ubicazioni']));
+      if (!ubi) continue;
+      const capRaw = pick(r, ['capacitate','capacitatemax','capmax','capacitatemaxpicking','capacitatemaxcasela']);
+      const cap = capRaw === undefined || capRaw === '' ? null : parseNum(capRaw);
+      rows.push({
+        cod_magazzino: clean(pick(r, ['codmagazzino','magazzino','mag'])),
+        ubicazione: ubi,
+        articolo: clean(pick(r, ['articolo','codarticol','cod'])),
+        descrizione: clean(pick(r, ['descrizione','denumire','descriere'])),
+        capFile: cap > 0 ? Math.round(cap) : null
+      });
+    }
+    if (!rows.length) throw new Error('Nu am găsit rânduri valide. Verifică antetul coloanelor.');
+    if (!S.loadedOnce) await loadCatalog();
+    const old = catMap();
+    const seen = new Set(); let dup = 0;
+    for (const r of rows) if (r.articolo){ if (seen.has(r.articolo)) dup++; seen.add(r.articolo); }
+    let keep = 0, fromFile = 0;
+    for (const r of rows){
+      if (!r.articolo){ r.cap_max = null; continue; }
+      if (r.capFile){ r.cap_max = r.capFile; fromFile++; }
+      else if (old.get(r.articolo)?.cap){ r.cap_max = old.get(r.articolo).cap; keep++; }
+      else r.cap_max = null;
+    }
+    S.pendingCat = rows;
+    const withArt = rows.filter(r => r.articolo).length;
+    $('catPreview').innerHTML = `<div class="msg info"><b>${esc(f.name)}</b>: ${fmt(rows.length)} rânduri, ${fmt(withArt)} articole, ${fmt(rows.length - withArt)} ubicazioni goale.
+      Capacități: ${fmt(fromFile)} din fișier, ${fmt(keep)} păstrate din catalogul actual.
+      ${dup ? `<br><b>Atenție:</b> ${fmt(dup)} coduri de articol apar de mai multe ori.` : ''}
+      <br>Catalogul actual (${fmt(S.catalog.length)} rânduri) va fi înlocuit complet.</div>
+      <div class="row"><button class="btn pri" id="btnCatConfirm">Confirmă înlocuirea</button><button class="btn" id="btnCatCancel">Anulează</button></div>`;
+    $('btnCatConfirm').onclick = confirmCatalog;
+    $('btnCatCancel').onclick = () => { S.pendingCat = null; $('catPreview').innerHTML = ''; };
+  } catch(err){ $('catPreview').innerHTML = `<div class="msg err">${esc(err.message)}</div>`; }
+}
+async function confirmCatalog(){
+  const rows = S.pendingCat; if (!rows) return;
+  const batch = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const when = new Date().toISOString();
+  const payload = rows.map(r => {
+    const o = {cod_magazzino: r.cod_magazzino, ubicazione: r.ubicazione, articolo: r.articolo, descrizione: r.descrizione, batch_id: batch, uploaded_at: when};
+    if (!S.noCapCol) o.cap_max = r.cap_max;
+    return o;
+  });
+  const btns = $('catPreview').querySelectorAll('button'); btns.forEach(b => b.disabled = true);
+  try {
+    for (let i = 0; i < payload.length; i += 500){
+      $('catPreview').firstElementChild.textContent = `Se încarcă… ${Math.min(i + 500, payload.length)} / ${payload.length}`;
+      await sb(TABLE, {method: 'POST', headers: {Prefer: 'return=minimal'}, body: JSON.stringify(payload.slice(i, i + 500))});
+    }
+    // abia după ce noile date sunt complet inserate, ștergem tot ce nu aparține noului lot
+    await sb(`${TABLE}?or=(batch_id.is.null,batch_id.neq.${encodeURIComponent(batch)})`, {method: 'DELETE'});
+    S.pendingCat = null;
+    await loadCatalog();
+    $('catPreview').innerHTML = `<div class="msg ok">Catalog actualizat: ${fmt(payload.length)} rânduri.</div>`;
+    renderAll();
+  } catch(err){
+    try { await sb(`${TABLE}?batch_id=eq.${encodeURIComponent(batch)}`, {method: 'DELETE'}); } catch(e){}
+    $('catPreview').innerHTML = `<div class="msg err">Eroare: ${esc(err.message)}. Catalogul vechi a rămas neschimbat.</div>`;
+  }
+}
+function downloadCatalog(){
+  const data = S.catalog.map(r => ({'Cod Magazzino': r.cod_magazzino, 'Cod ubicazione': r.ubicazione, 'Articolo': r.articolo || '', 'Descrizione': r.descrizione || '', 'Capacitate': r.cap_max || ''}));
+  const ws = XLSX.utils.json_to_sheet(data), wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Catalog');
+  XLSX.writeFile(wb, 'catalog_articoli.xlsx');
+}
+async function saveCap(art, val){
+  const n = val === '' ? null : Math.round(Number(val));
+  if (n !== null && !(n > 0)) return renderCatalog();
+  try {
+    await sb(`${TABLE}?articolo=eq.${encodeURIComponent(q(art))}`, {method: 'PATCH', headers: {Prefer: 'return=minimal'}, body: JSON.stringify({cap_max: n})});
+    S.catalog.forEach(r => { if (r.articolo === art) r.cap_max = n; });
+    renderCatalogInfo(); renderTasks();
+  } catch(err){ banner('Nu am putut salva capacitatea: ' + esc(err.message), 'err'); }
+}
+async function fillCaps(){
+  const v = Math.round(Number(prompt('Capacitate max. pentru toate articolele fără capacitate (pz):', '300')));
+  if (!(v > 0)) return;
+  try {
+    await sb(`${TABLE}?articolo=not.is.null&cap_max=is.null`, {method: 'PATCH', headers: {Prefer: 'return=minimal'}, body: JSON.stringify({cap_max: v})});
+    await loadCatalog(); renderAll();
+    banner(`Capacitatea ${v} a fost setată pe articolele care nu aveau. Le poți modifica individual.`, 'ok');
+  } catch(err){ banner('Eroare: ' + esc(err.message), 'err'); }
+}
+
+/* ================= STOC ================= */
+function setStock(rows, name, demo){
+  S.stock = rows; S.stockName = name; S.stockTime = new Date().toISOString(); S.demo = !!demo;
+  if (!demo) S.demoCap = {};
+  try { if (!demo) localStorage.setItem('abc_stock', JSON.stringify({rows, name, time: S.stockTime})); } catch(e){}
+  renderAll();
+}
+async function onStockFile(e){
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try {
+    const raw = await readSheet(f), agg = new Map();
+    for (const r of raw){
+      const art = clean(pick(r, ['articolo','codarticol','cod'])), ubi = clean(pick(r, ['ubicazione','codubicazione']));
+      const qty = parseNum(pick(r, ['cantitate','qta','quantit','qty','giacenza','pezzi','pz','bucati']));
+      if (!art || !ubi || !(qty > 0)) continue;
+      const k = art + '\u0001' + ubi; agg.set(k, (agg.get(k) || 0) + qty);
+    }
+    const rows = [...agg].map(([k, qty]) => { const [art, ubi] = k.split('\u0001'); return {art, ubi, qty}; });
+    if (!rows.length) throw new Error('Nu am găsit rânduri valide (coloane: Articolo, Ubicazione, Cantitate).');
+    setStock(rows, f.name, false);
+    banner(`Stoc încărcat: ${fmt(rows.length)} rânduri.`, 'ok');
+  } catch(err){ banner(esc(err.message), 'err'); }
+}
+function genDemo(){
+  const cat = S.catalog.filter(r => r.articolo);
+  if (!cat.length) return banner('Încarcă mai întâi catalogul.', 'err');
+  const locs = [...new Set(S.catalog.map(r => r.ubicazione))];
+  const caps = [100, 150, 200, 300, 500];
+  const rnd = n => Math.floor(Math.random() * n);
+  const rows = [], demoCap = {};
+  const chosen = [...cat].sort(() => Math.random() - .5).slice(0, 70);
+  for (const c of chosen){
+    const cap = c.cap_max || caps[rnd(caps.length)];
+    if (!c.cap_max) demoCap[c.articolo] = cap;
+    const step = cap >= 300 ? 25 : 10;
+    const casella = Math.random() < .2 ? 0 : step * (1 + rnd(Math.floor(cap / step / 1.5)));
+    if (casella) rows.push({art: c.articolo, ubi: c.ubicazione, qty: casella});
+    const used = new Set([c.ubicazione]);
+    for (let i = 1 + rnd(5); i > 0; i--){
+      const u = locs[rnd(locs.length)]; if (used.has(u)) continue; used.add(u);
+      rows.push({art: c.articolo, ubi: u, qty: step * (1 + rnd(Math.floor(cap / step / 1.2)))});
+    }
+  }
+  S.demoCap = demoCap;
+  setStock(rows, 'Date demo (simulare)', true);
+  banner('Date demo: stoc generat aleatoriu, nu se salvează în Supabase. Capacitățile lipsă sunt simulate.', 'demo');
+}
+
+/* ================= RENDER ================= */
+function renderAll(){ renderCatalogInfo(); renderCatalog(); renderStock(); renderTasks(); renderHeader(); }
+function renderHeader(){
+  const last = S.catalog.reduce((m, r) => r.uploaded_at > m ? r.uploaded_at : m, '');
+  $('hdrSub').textContent = 'Depozit KOH-I-NOOR' + (last ? ' · catalog actualizat ' + fdt(last) : '');
+}
+function renderCatalogInfo(){
+  const art = S.catalog.filter(r => r.articolo);
+  const withCap = art.filter(r => r.cap_max).length;
+  const last = S.catalog.reduce((m, r) => r.uploaded_at > m ? r.uploaded_at : m, '');
+  $('catInfo').innerHTML = `
+    ${S.noCapCol ? '<div class="msg err">Coloana <b>cap_max</b> nu există în tabel. Rulează setup_articoli.sql în Supabase (SQL Editor), apoi apasă Reîncarcă.</div>' : ''}
+    <div class="kv">
+      <div><b>${fmt(S.catalog.length)}</b><span>rânduri</span></div>
+      <div><b>${fmt(art.length)}</b><span>articole</span></div>
+      <div><b>${fmt(withCap)}</b><span>cu capacitate</span></div>
+      <div><b>${fmt(art.length - withCap)}</b><span>fără capacitate</span></div>
+    </div>
+    <p style="margin:0 0 8px"><b>Ultima actualizare:</b> ${fdt(last)}</p>`;
+}
+function renderCatalog(){
+  const term = $('catSearch').value.trim().toLowerCase();
+  let rows = S.catalog.filter(r => r.articolo);
+  if (term) rows = rows.filter(r => (r.articolo + ' ' + (r.descrizione || '') + ' ' + r.ubicazione).toLowerCase().includes(term));
+  const shown = rows.slice(0, 120);
+  $('catTable').innerHTML = `<thead><tr><th>Articol</th><th>Descriere</th><th>Caselă</th><th class="num">Cap. max (pz)</th></tr></thead><tbody>` +
+    shown.map(r => `<tr><td><b>${esc(r.articolo)}</b></td><td>${esc(r.descrizione)}</td><td>${esc(r.ubicazione)}</td>
+      <td class="num"><input type="number" min="1" inputmode="numeric" class="${r.cap_max ? '' : 'missing'}" value="${r.cap_max || ''}" data-art="${esc(r.articolo)}" ${S.noCapCol ? 'disabled' : ''}></td></tr>`).join('') + '</tbody>';
+  $('catMore').textContent = rows.length > shown.length ? `Se afișează ${shown.length} din ${fmt(rows.length)}. Folosește căutarea.` : '';
+}
+function renderStock(){
+  $('stockInfo').innerHTML = S.stock.length
+    ? `<div class="msg ${S.demo ? 'demo' : 'info'}">${esc(S.stockName)} · ${fmt(S.stock.length)} rânduri · ${fdt(S.stockTime)}</div>`
+    : '<p class="muted">Niciun stoc încărcat.</p>';
+  const term = $('stockSearch').value.trim().toLowerCase();
+  let rows = S.stock; if (term) rows = rows.filter(r => (r.art + ' ' + r.ubi).toLowerCase().includes(term));
+  $('stockTable').innerHTML = `<thead><tr><th>Articol</th><th>Ubicazione</th><th class="num">Cantitate</th></tr></thead><tbody>` +
+    rows.slice(0, 200).map(r => `<tr><td>${esc(r.art)}</td><td>${esc(r.ubi)}</td><td class="num">${fmt(r.qty)}</td></tr>`).join('') + '</tbody>';
+}
+function renderTasks(){
+  const catalog = catMap();
+  const res = computeTasks(catalog, S.stock, S.demo ? S.demoCap : null);
+  let list = res.tasks;
+  const st = t => S.status[t.id] || 'todo';
+  const kpi = list.reduce((a, t) => (a.f += t.freed, a.p += t.total, a), {f: 0, p: 0});
+  $('tasksSummary').innerHTML = `<div class="kv">
+    <div><b>${fmt(list.length)}</b><span>sarcini</span></div>
+    <div><b>${fmt(kpi.f)}</b><span>poziții de eliberat</span></div>
+    <div><b>${fmt(kpi.p)}</b><span>bucăți de mutat</span></div>
+    <div><b>${fmt(list.filter(t => st(t) === 'done').length)}</b><span>finalizate</span></div></div>`;
+  if (S.filter !== 'all') list = list.filter(t => st(t) === S.filter);
+  const term = $('tasksSearch').value.trim().toLowerCase();
+  if (term) list = list.filter(t => (t.art + ' ' + t.desc + ' ' + t.dest + ' ' + t.moves.map(m => m.ubi).join(' ')).toLowerCase().includes(term));
+  if (S.sort === 'route') list = [...list].sort((a, b) => a.dest.localeCompare(b.dest));
+
+  if (!S.stock.length) $('tasksList').innerHTML = '<div class="msg info">Încarcă stocul (tab Stoc) sau generează date demo.</div>';
+  else if (!list.length) $('tasksList').innerHTML = '<p class="muted">Nicio sarcină în această vedere.</p>';
+  else $('tasksList').innerHTML = list.map(t => {
+    const s = st(t), key = esc(t.id);
+    return `<details class="task ${s === 'todo' ? '' : s}" data-id="${key}" ${S.open.has(t.id) ? 'open' : ''}>
+      <summary>
+        <div><span class="dest">${esc(t.dest)}</span> <span class="art">${esc(t.art)}</span></div>
+        <div class="desc">${esc(t.desc)}</div>
+        <div class="chips"><span class="chip">${fmt(t.total)} pz</span><span class="chip free">${t.freed} ${t.freed === 1 ? 'poziție' : 'poziții'} eliberate</span></div>
+      </summary>
+      <div class="steps">
+        ${t.moves.map(m => `<div class="step"><span class="loc">${esc(m.ubi)}</span>
+          <span class="act">Iau <b>${fmt(m.qty)}</b> bucăți <span class="tag">Golește!</span>
+          ${m.shared ? '<span class="tag warn">mai are alte articole</span>' : ''}</span></div>`).join('')}
+        <div class="step"><span class="loc">${esc(t.dest)}</span>
+          <span class="act">Depun în caselă. Stoc caselă: ${fmt(t.casellaQty)} → <b>${fmt(t.after)}</b> / ${fmt(t.cap)} pz</span></div>
+        <div class="acts">
+          <button class="btn ok" data-act="done">Finalizată</button>
+          <button class="btn bad" data-act="problem">Articol lipsă / problemă</button>
+          ${s !== 'todo' ? '<button class="btn" data-act="todo">Redeschide</button>' : ''}
+        </div>
+      </div></details>`;
+  }).join('');
+
+  const w = [];
+  const names = a => `<ul class="warnlist">${a.slice(0, 80).map(x => `<li>${esc(x)}</li>`).join('')}${a.length > 80 ? '<li>…</li>' : ''}</ul>`;
+  if (res.noCap.length) w.push(`<details><summary><b>${res.noCap.length}</b> articole cu stoc în scortă, dar fără capacitate (nu pot fi calculate)</summary>${names(res.noCap)}</details>`);
+  if (res.noCatalog.length) w.push(`<details><summary><b>${res.noCatalog.length}</b> articole din stoc negăsite în catalog</summary>${names(res.noCatalog)}</details>`);
+  if (res.full.length) w.push(`<details><summary><b>${res.full.length}</b> articole cu caselă deja plină (nu se poate muta nimic)</summary>${names(res.full)}</details>`);
+  if (res.noFit.length) w.push(`<details><summary><b>${res.noFit.length}</b> articole la care nicio scortă nu încape integral</summary>${names(res.noFit)}</details>`);
+  $('tasksWarn').innerHTML = w.length ? `<div class="box" style="margin-top:14px"><h2>Articole sărite</h2>${w.map(x => `<div style="margin-bottom:6px">${x}</div>`).join('')}</div>` : '';
+}
+
+/* ================= EVENIMENTE ================= */
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.setAttribute('aria-selected', x === b));
+  ['tasks', 'stock', 'catalog'].forEach(t => $('tab-' + t).classList.toggle('hide', t !== b.dataset.tab));
+});
+$('tasksFilter').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  S.filter = b.dataset.f;
+  $('tasksFilter').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  renderTasks();
+};
+$('tasksSort').onchange = e => { S.sort = e.target.value; renderTasks(); };
+$('tasksSearch').oninput = renderTasks;
+$('stockSearch').oninput = renderStock;
+$('catSearch').oninput = renderCatalog;
+$('tasksList').addEventListener('toggle', e => {
+  const d = e.target; if (!d.dataset || !d.dataset.id) return;
+  const id = d.dataset.id;
+  d.open ? S.open.add(id) : S.open.delete(id);
+}, true);
+$('tasksList').onclick = e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const tid = b.closest('details').dataset.id;
+  if (b.dataset.act === 'todo') delete S.status[tid]; else S.status[tid] = b.dataset.act;
+  S.open.delete(tid);
+  try { localStorage.setItem('abc_status', JSON.stringify(S.status)); } catch(err){}
+  renderTasks();
+};
+$('catTable').addEventListener('change', e => { if (e.target.dataset.art) saveCap(e.target.dataset.art, e.target.value); });
+$('catFile').onchange = onCatFile;
+$('stockFile').onchange = onStockFile;
+$('btnDemo').onclick = genDemo;
+$('btnClearStock').onclick = () => { S.demo = false; S.demoCap = {}; S.stock = []; try { localStorage.removeItem('abc_stock'); } catch(e){} banner(''); renderAll(); };
+$('btnCatDownload').onclick = downloadCatalog;
+$('btnCapFill').onclick = fillCaps;
+$('btnCatReload').onclick = async () => { try { await loadCatalog(); renderAll(); banner(''); } catch(e){ banner('Eroare: ' + esc(e.message), 'err'); } };
+
+(async function init(){
+  renderAll();
+  try { await loadCatalog(); renderAll(); }
+  catch(e){ banner('Nu m-am putut conecta la Supabase: ' + esc(e.message) + '. Verifică tabelul și politicile (setup_articoli.sql).', 'err'); }
+})();
+</script>
+</body>
+</html>
