@@ -26,7 +26,10 @@ header .sub{color:#8fa0a8;font-size:11.5px;margin-top:3px;letter-spacing:.02em;l
 
 header .sub b{color:var(--hazard);font-weight:600}
 header .sub .dim{opacity:.6;display:block;font-size:11px;margin-top:1px}
-#conn{position:absolute;right:14px;top:10px;font-size:12px;display:flex;align-items:center;gap:6px;color:#aeb9bf}
+#conn{display:flex;align-items:center;gap:6px;justify-content:flex-end;font-size:12px;color:#aeb9bf}
+#hdrRight{position:absolute;right:14px;top:10px;text-align:right;line-height:1.3}
+#hdrDate{font-size:11px;color:#8fa0a8}
+#hdrTime{font:600 15px var(--fh);letter-spacing:.04em;color:#fff;font-variant-numeric:tabular-nums}
 #conn::before{content:"";width:10px;height:10px;border-radius:50%;background:#8a979e}
 #conn.ok::before{background:#3ecf8e} #conn.bad::before{background:#ff5a4f}
 #conn.bad{color:#ff9a92}
@@ -114,7 +117,11 @@ td input.missing{border-color:var(--hazard)}
 <header>
   <h1>Abbassamento</h1>
   <div class="sub" id="hdrSub">Magazzino KOH-I-NOOR</div>
-  <div id="conn" role="status">connessione in corso…</div>
+  <div id="hdrRight">
+    <div id="conn" role="status">connessione in corso…</div>
+    <div id="hdrDate"></div>
+    <div id="hdrTime"></div>
+  </div>
 </header>
 <nav role="tablist">
   <button role="tab" aria-selected="true" data-tab="tasks">Attività</button>
@@ -808,6 +815,14 @@ function makePdf(){
   else { banner('Il browser ha bloccato la nuova scheda: il PDF viene scaricato.', 'info'); doc.save(fname); }
 }
 /*PDF-END*/
+
+/* ================= OROLOGIO ================= */
+function tickClock(){
+  const d = new Date();
+  $('hdrDate').textContent = d.toLocaleDateString('it-IT', {day:'2-digit', month:'2-digit', year:'numeric'});
+  $('hdrTime').textContent = d.toLocaleTimeString('it-IT', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+tickClock(); setInterval(tickClock, 1000);
 
 /* ================= HEARTBEAT SUPABASE ================= */
 const HB_MS = 6000;
