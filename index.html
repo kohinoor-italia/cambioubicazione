@@ -84,6 +84,10 @@ td input.missing{border-color:var(--hazard)}
 .seg{display:flex;gap:4px;flex-wrap:wrap}
 .seg button{border:2px solid var(--line);background:#fff;border-radius:999px;padding:6px 14px;cursor:pointer;font-weight:600}
 .seg button[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:#fff}
+.lockbox{max-width:320px;margin:30px auto;text-align:center}
+.lockbox h2{margin:0 0 4px;font:700 22px var(--fh)}
+.lockbox input{width:100%;text-align:center;letter-spacing:.2em;margin:10px 0 6px}
+.lockbox .err{color:var(--bad);font-size:14px;min-height:20px}
 .sbar{display:flex;gap:6px}
 .sbar .btn{flex:1;min-height:38px;padding:6px 10px;text-align:center;display:flex;align-items:center;justify-content:center}
 #stockInfo .msg{padding:5px 10px;font-size:12.5px;margin:0}
@@ -136,6 +140,17 @@ td input.missing{border-color:var(--hazard)}
     </div>
     <div id="tasksList"></div>
     <div id="tasksWarn"></div>
+  </section>
+
+  <!-- BLOCCO -->
+  <section class="panel hide" id="tab-lock">
+    <div class="lockbox">
+      <h2>🔒 Area protetta</h2>
+      <div class="muted">Inserisci il codice per accedere</div>
+      <input type="password" id="lockPw" inputmode="text" autocomplete="off" placeholder="Codice">
+      <div class="err" id="lockErr"></div>
+      <button class="btn pri" id="lockBtn" style="width:100%">Sblocca</button>
+    </div>
   </section>
 
   <!-- GIACENZA -->
@@ -408,6 +423,7 @@ function downloadCatalog(){
 async function saveCap(art, val){
   const n = val === '' ? null : Math.round(Number(val));
   if (n !== null && !(n > 0)) return renderCatalog();
+  if (!confirm(`Salvare capacità ${n === null ? '(vuota)' : n + ' pz'} per ${art}?`)) return renderCatalog();
   const prev = S.catalog.find(r => r.articolo === art)?.cap_max ?? null;
   const prevDemo = S.demoCap[art];
   const apply = v => S.catalog.forEach(r => { if (r.articolo === art) r.cap_max = v; });
@@ -427,6 +443,7 @@ async function saveCap(art, val){
 async function fillCaps(){
   const v = Math.round(Number(prompt('Capacità max. per tutti gli articoli senza capacità (pz):', '300')));
   if (!(v > 0)) return;
+  if (!confirm(`Impostare capacità ${v} pz a TUTTI gli articoli senza capacità?`)) return;
   try {
     await sb(`${TABLE}?articolo=not.is.null&cap_max=is.null`, {method: 'PATCH', headers: {Prefer: 'return=minimal'}, body: JSON.stringify({cap_max: v})});
     await loadCatalog(); renderAll();
@@ -454,11 +471,13 @@ async function onStockFile(e){
     }
     const rows = [...agg].map(([k, qty]) => { const [art, ubi] = k.split('\u0001'); return {art, ubi, qty}; });
     if (!rows.length) throw new Error('Nessuna riga valida trovata (colonne: Articolo, Ubicazione, Cantitate).');
+    if (!confirm(`Caricare "${f.name}" (${rows.length} righe)?\nLa giacenza attuale verrà sostituita.`)) return;
     setStock(rows, f.name, false);
     banner(`Giacenza caricata: ${fmt(rows.length)} righe.`, 'ok');
   } catch(err){ banner(esc(err.message), 'err'); }
 }
 function genDemo(){
+  if (S.stock.length && !confirm('Sostituire la giacenza attuale con dati demo?')) return;
   const cat = S.catalog.filter(r => r.articolo && r.cap_max);
   if (!cat.length) return banner('Nessun articolo ha una capacità massima. Imposta la capacità nel Catalogo, poi genera la simulazione.', 'err');
   const locs = [...new Set(S.catalog.map(r => r.ubicazione))];
@@ -596,10 +615,26 @@ function renderTasks(){
 }
 
 /* ================= EVENIMENTE ================= */
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('nav button').forEach(x => x.setAttribute('aria-selected', x === b));
-  ['tasks', 'stock', 'catalog'].forEach(t => $('tab-' + t).classList.toggle('hide', t !== b.dataset.tab));
-});
+const PW = 'kin';
+let UNLOCKED = false, lockTarget = null;
+try { UNLOCKED = sessionStorage.getItem('abc_unlock') === '1'; } catch(e){}
+function showTab(tab){
+  const locked = !UNLOCKED && tab !== 'tasks';
+  document.querySelectorAll('nav button').forEach(x => x.setAttribute('aria-selected', x.dataset.tab === tab));
+  ['tasks', 'stock', 'catalog'].forEach(t => $('tab-' + t).classList.toggle('hide', t !== tab || locked));
+  $('tab-lock').classList.toggle('hide', !locked);
+  if (locked){ lockTarget = tab; $('lockPw').value = ''; $('lockErr').textContent = ''; setTimeout(() => $('lockPw').focus(), 50); }
+}
+function tryUnlock(){
+  if ($('lockPw').value.trim() === PW){
+    UNLOCKED = true;
+    try { sessionStorage.setItem('abc_unlock', '1'); } catch(e){}
+    showTab(lockTarget || 'stock');
+  } else { $('lockErr').textContent = 'Codice errato'; $('lockPw').value = ''; }
+}
+$('lockBtn').onclick = tryUnlock;
+$('lockPw').onkeydown = e => { if (e.key === 'Enter') tryUnlock(); };
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 $('tasksFilter').onclick = e => {
   const b = e.target.closest('button'); if (!b) return;
   S.filter = b.dataset.f;
@@ -641,7 +676,7 @@ $('catTable').addEventListener('change', e => { if (e.target.dataset.art) saveCa
 $('catFile').onchange = onCatFile;
 $('stockFile').onchange = onStockFile;
 $('btnDemo').onclick = genDemo;
-$('btnClearStock').onclick = () => { S.demo = false; S.demoCap = {}; S.stock = []; try { localStorage.removeItem('abc_stock'); } catch(e){} banner(''); renderAll(); };
+$('btnClearStock').onclick = () => { if (!S.stock.length || !confirm('Eliminare la giacenza caricata?')) return; S.demo = false;
 $('btnCatDownload').onclick = downloadCatalog;
 $('btnPdf').onclick = makePdf;
 $('btnCapFill').onclick = fillCaps;
