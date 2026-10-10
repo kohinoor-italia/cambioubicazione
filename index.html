@@ -84,6 +84,10 @@ td input.missing{border-color:var(--hazard)}
 .seg{display:flex;gap:4px;flex-wrap:wrap}
 .seg button{border:2px solid var(--line);background:#fff;border-radius:999px;padding:6px 14px;cursor:pointer;font-weight:600}
 .seg button[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:#fff}
+.sbar{display:flex;gap:6px}
+.sbar .btn{flex:1;min-height:38px;padding:6px 10px;text-align:center;display:flex;align-items:center;justify-content:center}
+#stockInfo .msg{padding:5px 10px;font-size:12.5px;margin:0}
+#stockInfo p{margin:0;font-size:12.5px}
 .tbar{display:flex;gap:6px;margin-bottom:8px}
 .tbar input[type=search]{flex:1;min-width:0;min-height:38px;padding:6px 10px}
 .tbar select{width:auto;min-height:38px;padding:6px 8px}
@@ -138,13 +142,13 @@ td input.missing{border-color:var(--hazard)}
   <section class="panel hide" id="tab-stock">
     <div class="box">
       <h2>Giacenza attuale</h2>
-      <p class="muted">File .xlsx o .csv con le colonne: Articolo, Ubicazione, Cantitate.</p>
-      <div class="row">
-        <label class="btn pri">Carica giacenza<input type="file" id="stockFile" accept=".xlsx,.xls,.csv" hidden></label>
-        <button class="btn" id="btnDemo">Genera dati demo</button>
-        <button class="btn bad" id="btnClearStock">Elimina giacenza</button>
+      <p class="muted" style="margin:0 0 8px;font-size:12px">.xlsx / .csv · colonne: Articolo, Ubicazione, Cantitate</p>
+      <div class="sbar">
+        <label class="btn pri">Carica<input type="file" id="stockFile" accept=".xlsx,.xls,.csv" hidden></label>
+        <button class="btn" id="btnDemo">Demo</button>
+        <button class="btn bad" id="btnClearStock">Elimina</button>
       </div>
-      <div id="stockInfo" style="margin-top:10px"></div>
+      <div id="stockInfo" style="margin-top:6px"></div>
     </div>
     <div class="row" style="margin-bottom:8px"><input type="search" id="stockSearch" placeholder="Cerca nella giacenza"></div>
     <div class="tablewrap"><table id="stockTable"></table></div>
@@ -532,7 +536,7 @@ function renderCatalog(){
 }
 function renderStock(){
   $('stockInfo').innerHTML = S.stock.length
-    ? `<div class="msg ${S.demo ? 'demo' : 'info'}">${esc(S.stockName)} · ${fmt(S.stock.length)} righe · ${fdt(S.stockTime)}</div>`
+    ? `<div class="msg ${S.demo ? 'demo' : 'info'}">${esc(S.stockName)} · ${fmt(S.stock.length)} righe · ${S.stockTime ? new Date(S.stockTime).toLocaleString('it-IT', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—'}</div>`
     : '<p class="muted">Nessuna giacenza caricata.</p>';
   const term = $('stockSearch').value.trim().toLowerCase();
   let rows = S.stock; if (term) rows = rows.filter(r => (r.art + ' ' + r.ubi).toLowerCase().includes(term));
