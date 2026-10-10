@@ -641,7 +641,7 @@ function makePdf(){
   y += 26;
 
   list.forEach((t, i) => {
-    const h = 14 + (t.moves.length + 1) * 7 + 3;
+    const h = 14 + (t.moves.length + 1) * 7 + 6 + 3;
     if (y + h > H - M - FOOT){
       doc.addPage(); y = M;
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(90);
@@ -665,7 +665,12 @@ function makePdf(){
       parts(M + 10, ry - 1.7, [['Prelevare da ', false], [m.ubi, true], [`:  ${m.qty} pz  (svuotare)`, false], [m.shared ? '  - contiene altri articoli' : '', false]], 11);
     });
     ry += 7; doc.rect(M + 3, ry - 5, 4, 4);
-    parts(M + 10, ry - 1.7, [['Depositare in casella ', false], [t.dest, true], [`:  ${t.casellaQty} + ${t.total} = ${t.after} / ${t.cap} pz`, false]], 11);
+    parts(M + 10, ry - 1.7, [['Depositare in casella ', false], [t.dest, true]], 11);
+    ry += 6;
+    parts(M + 10, ry - 1.7, [
+      ['Già in casella: ', false], [`${t.casellaQty} pz${t.casellaQty ? '' : ' (vuota)'}`, true],
+      ['    Da aggiungere: ', false], [`+${t.total} pz`, true],
+      ['    Totale: ', false], [`${t.after} / ${t.cap} pz`, true]], 10);
     y = top + h + 4;
   });
 
