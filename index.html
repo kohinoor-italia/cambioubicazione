@@ -676,7 +676,12 @@ $('catTable').addEventListener('change', e => { if (e.target.dataset.art) saveCa
 $('catFile').onchange = onCatFile;
 $('stockFile').onchange = onStockFile;
 $('btnDemo').onclick = genDemo;
-$('btnClearStock').onclick = () => { if (!S.stock.length || !confirm('Eliminare la giacenza caricata?')) return; S.demo = false;
+$('btnClearStock').onclick = () => {
+  if (!S.stock.length || !confirm('Eliminare la giacenza caricata?')) return;
+  S.demo = false; S.demoCap = {}; S.stock = [];
+  try { localStorage.removeItem('abc_stock'); } catch(e){}
+  banner(''); renderAll();
+};
 $('btnCatDownload').onclick = downloadCatalog;
 $('btnPdf').onclick = makePdf;
 $('btnCapFill').onclick = fillCaps;
