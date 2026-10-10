@@ -169,6 +169,7 @@ td input.missing{border-color:var(--hazard)}
 const SB_URL = 'https://fndjrfieitieqzafhyzz.supabase.co';
 const SB_KEY = 'sb_publishable_bHDKjiKAVHqW199ICw7i2g_O3olYMAr';
 const TABLE  = 'articoli';
+const SB_HEADERS = {apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`};
 
 /* ================= ALGORITM (pur, testabil) ================= */
 /*ALGO-START*/
@@ -255,7 +256,7 @@ function banner(text, kind){ $('banner').innerHTML = text ? `<div class="msg ${k
 /* ================= SUPABASE (REST) ================= */
 async function sb(path, opt = {}){
   const url = SB_URL + '/rest/v1/' + path;
-  const o = {...opt, headers: {apikey: SB_KEY, 'Content-Type': 'application/json', ...(opt.headers || {})}};
+  const o = {...opt, headers: {...SB_HEADERS, 'Content-Type': 'application/json', ...(opt.headers || {})}};
   let res;
   try { res = await fetch(url, o); }
   catch(e){                                   // iOS: "Load failed" dopo una connessione interrotta
@@ -734,17 +735,15 @@ function makePdf(){
 /*PDF-END*/
 
 /* ================= HEARTBEAT SUPABASE ================= */
-const HB_MS = 4000;
-let hbTimer = null, hbBusy = false, hbFails = 0;
+const HB_MS = 6000;
+let hbTimer = null, hbFails = 0;
 function setConn(ok){
   const el = $('conn'); el.className = ok ? 'ok' : 'bad';
   el.textContent = ok ? 'connesso' : 'nessuna connessione';
 }
 async function ping(){
-  if (hbBusy) return; hbBusy = true;
-  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 3500);
   try {
-    const res = await fetch(`${SB_URL}/rest/v1/${TABLE}?select=id&limit=1`, {headers: {apikey: SB_KEY}, cache: 'no-store', signal: ctl.signal});
+    const res = await fetch(`${SB_URL}/rest/v1/${TABLE}?select=id&limit=1`, {headers: SB_HEADERS});
     if (!res.ok) throw new Error(res.status);
     const recovered = hbFails >= 2 || !S.loadedOnce;
     hbFails = 0; setConn(true);
@@ -752,15 +751,18 @@ async function ping(){
       try { await loadCatalog(); renderAll(); banner(''); } catch(e){}
     }
   } catch(e){ if (++hbFails >= 2) setConn(false); }
-  finally { clearTimeout(to); hbBusy = false; }
 }
-function hbStart(){ hbStop(); ping(); hbTimer = setInterval(ping, HB_MS); }
+function hbStart(){
+  hbStop(); ping();
+  hbTimer = setInterval(() => { if (document.visibilityState === 'visible') ping(); }, HB_MS);
+}
 function hbStop(){ clearInterval(hbTimer); hbTimer = null; }
 document.addEventListener('visibilitychange', () => document.hidden ? hbStop() : hbStart());
 window.addEventListener('pageshow', hbStart);
 window.addEventListener('online', hbStart);
 window.addEventListener('offline', () => { hbFails = 2; setConn(false); });
 hbStart();
+
 
 (async function init(){
   renderAll();
