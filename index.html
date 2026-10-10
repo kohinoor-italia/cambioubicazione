@@ -622,6 +622,8 @@ function makePdf(){
   const list = S.viewTasks || [];
   if (!list.length) return banner('Nessuna attività da stampare.', 'err');
   if (!window.jspdf) return banner('Libreria PDF non caricata. Controlla la connessione e ricarica la pagina.', 'err');
+  const win = window.open('', '_blank');   // se deschide subito (în gestul de click), altfel iPhone-ul blochează fereastra
+  if (win) try { win.document.write('<p style="font-family:sans-serif">Generazione PDF…</p>'); } catch(e){}
   const doc = new window.jspdf.jsPDF({unit: 'mm', format: 'a4'});
   const W = 210, H = 297, M = 12, FOOT = 10;
   const now = new Date();
@@ -679,7 +681,9 @@ function makePdf(){
     doc.setPage(p); doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110);
     doc.text(`Pagina ${p} / ${n}`, W - M, H - 7, {align: 'right'});
   }
-  doc.save('abbassamento_' + now.toISOString().slice(0, 10) + '.pdf');
+  const fname = 'abbassamento_' + now.toISOString().slice(0, 10) + '.pdf';
+  if (win){ win.location.href = doc.output('bloburl'); }
+  else { banner('Il browser ha bloccato la nuova scheda: il PDF viene scaricato.', 'info'); doc.save(fname); }
 }
 /*PDF-END*/
 
