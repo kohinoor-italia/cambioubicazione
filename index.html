@@ -202,7 +202,9 @@ td input.missing{border-color:var(--hazard)}
       <div class="row">
         <label class="btn pri">Carica catalogo (.xlsx)<input type="file" id="catFile" accept=".xlsx,.xls" hidden></label>
         <button class="btn" id="btnCatDownload">Scarica catalogo (.xlsx)</button>
-        <button class="btn" id="btnCapFill">Imposta capacità a tutti quelli senza</button>
+<button class="btn" id="btnCapFill">Imposta capacità a tutti quelli senza</button>
+<button class="btn" id="btnCapExport">Esporta capacità (.xlsx)</button>
+<label class="btn">Importa capacità<input type="file" id="capFile" accept=".xlsx,.xls,.csv" hidden></label>
         <button class="btn" id="btnCatReload">Ricarica</button>
       </div>
       <div id="catPreview" style="margin-top:10px"></div>
@@ -475,6 +477,57 @@ async function fillCaps(){
   } catch(err){ banner('Errore: ' + esc(err.message), 'err'); }
 }
 
+function exportCaps(){
+  const m = new Map();
+  for (const r of S.catalog) if (r.articolo && r.cap_max && !m.has(r.articolo))
+    m.set(r.articolo, {'Articolo': r.articolo, 'Descrizione': r.descrizione || '', 'Capacitate': r.cap_max});
+  if (!m.size) return banner('Nessun articolo con capacità da esportare.', 'err');
+  const ws = XLSX.utils.json_to_sheet([...m.values()]), wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Capacita');
+  XLSX.writeFile(wb, 'capacita_max_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+}
+async function onCapFile(e){
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try {
+    const raw = await readSheet(f), imp = new Map();
+    for (const r of raw){
+      const art = clean(pick(r, ['articolo','codarticol','cod']));
+      const cap = parseNum(pick(r, ['capacitate','capacitatemax','capmax','capacita','cap']));
+      if (art && cap > 0) imp.set(art, Math.round(cap));
+    }
+    if (!imp.size) throw new Error('Nessuna riga valida (colonne: Articolo, Capacitate).');
+    if (!S.loadedOnce) await loadCatalog();
+    const exist = new Set(S.catalog.filter(r => r.articolo).map(r => r.articolo));
+    const ok = [...imp].filter(([a]) => exist.has(a));
+    const skipped = imp.size - ok.length;
+    if (!ok.length) throw new Error('Nessun articolo del file esiste nel catalogo.');
+    $('catPreview').innerHTML = `<div class="msg info"><b>${esc(f.name)}</b>: ${fmt(ok.length)} articoli esistenti riceveranno la capacità (sovrascritta se già presente).
+      ${skipped ? `<br>${fmt(skipped)} articoli non presenti nel catalogo verranno ignorati.` : ''}</div>
+      <div class="row"><button class="btn pri" id="btnCapConfirm">Conferma importazione</button><button class="btn" id="btnCapCancel">Annulla</button></div>`;
+    $('btnCapCancel').onclick = () => { $('catPreview').innerHTML = ''; };
+    $('btnCapConfirm').onclick = () => confirmCaps(ok);
+  } catch(err){ $('catPreview').innerHTML = `<div class="msg err">${esc(err.message)}</div>`; }
+}
+async function confirmCaps(ok){
+  $('catPreview').querySelectorAll('button').forEach(b => b.disabled = true);
+  try {
+    const byCap = new Map();
+    for (const [a, c] of ok){ if (!byCap.has(c)) byCap.set(c, []); byCap.get(c).push(a); }
+    let rowsDone = 0;
+    for (const [cap, arts] of byCap){
+      for (let i = 0; i < arts.length; i += 80){
+        const list = arts.slice(i, i + 80).map(a => encodeURIComponent(q(a))).join(',');
+        const res = await sb(`${TABLE}?articolo=in.(${list})&select=id`, {method: 'PATCH', headers: {Prefer: 'return=representation'}, body: JSON.stringify({cap_max: cap})});
+        rowsDone += (await res.json()).length;
+      }
+    }
+    if (!rowsDone) throw new Error('0 righe aggiornate. Controlla la policy UPDATE su Supabase.');
+    await loadCatalog(); renderAll();
+    $('catPreview').innerHTML = `<div class="msg ok">Capacità importata su ${fmt(ok.length)} articoli (${fmt(rowsDone)} righe aggiornate).</div>`;
+  } catch(err){ $('catPreview').innerHTML = `<div class="msg err">Errore: ${esc(err.message)}</div>`; }
+}
+
 /* ================= GIACENZA ================= */
 function setStock(rows, name, demo){
   S.stock = rows; S.stockName = name; S.stockTime = new Date().toISOString(); S.demo = !!demo;
@@ -715,6 +768,8 @@ $('btnClearStock').onclick = () => {
 $('btnCatDownload').onclick = downloadCatalog;
 $('btnPdf').onclick = makePdf;
 $('btnCapFill').onclick = fillCaps;
+$('btnCapExport').onclick = exportCaps;
+$('capFile').onchange = onCapFile;
 $('btnCatReload').onclick = async () => { try { await loadCatalog(); renderAll(); banner(''); } catch(e){ banner('Errore: ' + esc(e.message), 'err'); } };
 
 /*PDF-START*/
