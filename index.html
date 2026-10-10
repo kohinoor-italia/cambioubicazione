@@ -94,6 +94,11 @@ td input.missing{border-color:var(--hazard)}
 .lockbox h2{margin:0 0 4px;font:700 22px var(--fh)}
 .lockbox input{width:100%;text-align:center;letter-spacing:.2em;margin:10px 0 6px}
 .lockbox .err{color:var(--bad);font-size:14px;min-height:20px}
+#tab-catalog .muted{font-size:12px;max-width:640px;margin:6px 0 10px}
+#catInfo p{font-size:13px;color:var(--mute);margin:0 0 4px!important}
+#catInfo .kv{grid-template-columns:repeat(4,minmax(0,150px));margin:6px 0}
+#catInfo .kv b{font-size:20px}
+
 .sbar{display:flex;gap:6px}
 .sbar .btn{flex:1;min-height:38px;padding:6px 10px;text-align:center;display:flex;align-items:center;justify-content:center}
 #stockInfo .msg{padding:5px 10px;font-size:12.5px;margin:0}
@@ -184,7 +189,7 @@ td input.missing{border-color:var(--hazard)}
     <div class="box">
       <h2>Catalogo articoli / caselle</h2>
       <div id="catInfo"></div>
-      <p class="muted">File .xlsx con le colonne: Cod Magazzino, Cod ubicazione, Articolo, Descrizione (facoltativa: Capacitate). L'elenco esistente viene sostituito completamente; le capacità già impostate vengono mantenute in base al codice articolo.</p>
+      <p class="muted">.xlsx · colonne: Cod Magazzino, Cod ubicazione, Articolo, Descrizione (facoltativa: Capacitate). Il catalogo viene sostituito; le capacità esistenti restano (per codice articolo).</p>
       <div class="row">
         <label class="btn pri">Carica catalogo (.xlsx)<input type="file" id="catFile" accept=".xlsx,.xls" hidden></label>
         <button class="btn" id="btnCatDownload">Scarica catalogo (.xlsx)</button>
@@ -534,7 +539,7 @@ function renderCatalogInfo(){
       <div><b>${fmt(withCap)}</b><span>con capacità</span></div>
       <div><b>${fmt(art.length - withCap)}</b><span>senza capacità</span></div>
     </div>
-    <p style="margin:0 0 8px"><b>Ultimo aggiornamento:</b> ${fdt(last)}</p>`;
+    <p>Ultimo aggiornamento: <b>${fdt(last)}</b></p>`;
 }
 function renderCatalog(){
   const term = $('catSearch').value.trim().toLowerCase();
