@@ -101,6 +101,10 @@ td input.missing{border-color:var(--hazard)}
 .seg{display:flex;gap:4px;flex-wrap:wrap}
 .seg button{border:2px solid var(--line);background:#fff;border-radius:999px;padding:6px 14px;cursor:pointer;font-weight:600}
 .seg button[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:#fff}
+.seg button .bdg{display:inline-block;min-width:18px;margin-left:6px;padding:0 6px;border-radius:999px;font-size:12px;line-height:18px;text-align:center;color:#fff}
+.seg button .bdg.ok{background:var(--ok)}
+.seg button .bdg.bad{background:var(--bad)}
+
 .lockbox{max-width:320px;margin:30px auto;text-align:center}
 .lockbox h2{margin:0 0 4px;font:700 22px var(--fh)}
 .lockbox input{width:100%;text-align:center;letter-spacing:.2em;margin:10px 0 6px}
@@ -131,7 +135,8 @@ td input.missing{border-color:var(--hazard)}
 
 /* ============ DESKTOP (≥1000px): meniu stânga, conținut dreapta ============ */
 @media (min-width:1000px){
-  body{display:grid;grid-template-columns:190px minmax(0,1fr);grid-template-rows:auto 1fr;min-height:100vh;font-size:15px}
+  body{display:grid;grid-template-columns:190px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);height:100vh;font-size:15px}
+
 
   /* header compact, pe toată lățimea */
   header{grid-column:1/-1;padding:10px 22px 18px}
@@ -143,14 +148,18 @@ td input.missing{border-color:var(--hazard)}
 
   /* meniu lateral stânga */
   nav{grid-column:1;grid-row:2;flex-direction:column;gap:6px;max-width:none;margin:0;
-    padding:16px 12px;background:#222b30}
+    padding:16px 12px;background:#222b30;overflow-y:auto;min-height:0}
+
   nav button{flex:none;text-align:left;border-radius:8px;padding:12px 14px;font-size:18px;
     background:transparent;color:#cfd6d9;transition:background .15s}
   nav button:hover{background:#2f3a40}
   nav button[aria-selected=true]{background:var(--hazard);color:var(--ink)}
 
   /* conținut dreapta */
-  main{grid-column:2;grid-row:2;max-width:none;margin:0;padding:14px 18px 24px}
+  main{grid-column:2;grid-row:2;max-width:none;margin:0;padding:14px 18px;display:flex;flex-direction:column;min-height:0;overflow-y:auto}
+  main>.panel{flex-shrink:0}
+  #tab-tasks{flex:1 1 auto;min-height:0}
+
   .panel{border-radius:10px;padding:14px 16px;box-shadow:0 2px 10px rgba(28,34,38,.08)}
   .box{padding:12px 14px;margin:0 0 12px}
   .box h2{font-size:20px}
@@ -180,7 +189,8 @@ td input.missing{border-color:var(--hazard)}
   .navwarn .warnlist{max-height:140px;font-size:12px;padding-left:16px}
 
   #tasksList{grid-column:2;grid-row:1/5;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
-    gap:10px;align-content:start;align-items:start;max-height:calc(100vh - 175px);overflow-y:auto;padding-right:6px}
+    gap:10px;align-content:start;align-items:start;align-self:stretch;min-height:0;overflow-y:auto;padding-right:6px}
+
   #tasksList>.msg,#tasksList>p{grid-column:1/-1}
   details.task{margin:0}
   details.task summary{padding:9px 12px}
@@ -257,8 +267,9 @@ td input.missing{border-color:var(--hazard)}
       <button class="btn pri" id="btnPdf">PDF</button>
     </div>
     <div class="seg" id="tasksFilter" style="margin-bottom:10px">
-      <button data-f="all" aria-pressed="true">Tutte</button>
-      <button data-f="todo" aria-pressed="false">Da fare</button>
+      <button data-f="all" aria-pressed="false">Tutte</button>
+      <button data-f="todo" aria-pressed="true">Da fare</button>
+
       <button data-f="done" aria-pressed="false">Completate</button>
       <button data-f="problem" aria-pressed="false">Problemi</button>
     </div>
@@ -408,11 +419,13 @@ const S = {
   catalog: [], noCapCol: false, loadedOnce: false,
   stock: [], stockName: '', stockTime: null,
   demo: false, demoCap: {},
-  filter: 'all', sort: 'prio', open: new Set(), pendingCat: null,
+  filter: 'todo', sort: 'prio', open: new Set(), pendingCat: null,
+
   status: {}
 };
-S.busy = false;
+S.busy = false; S.stVer = 0;
 const stKey = o => JSON.stringify(Object.keys(o).sort().map(k => [k, o[k]]));
+
 async function loadStatus(){
   const out = [], step = 1000;
   for (let from = 0; ; from += step){
@@ -885,6 +898,11 @@ const res = computeTasks(catalog, S.stock.filter(r => UBI_OK.test(r.ubi)), S.dem
   let list = res.tasks;
   const st = t => S.status[t.id] || 'todo';
   const kpi = list.reduce((a, t) => (a.f += t.freed, a.p += t.total, a), {f: 0, p: 0});
+  const nDone = list.filter(t => st(t) === 'done').length, nProb = list.filter(t => st(t) === 'problem').length;
+  const bdg = (f, n, cls) => { const b = $('tasksFilter').querySelector(`[data-f="${f}"]`); if (b) b.innerHTML = b.dataset.l + (n ? `<span class="bdg ${cls}">${n}</span>` : ''); };
+  $('tasksFilter').querySelectorAll('button').forEach(b => { if (!b.dataset.l) b.dataset.l = b.textContent; });
+  bdg('done', nDone, 'ok'); bdg('problem', nProb, 'bad');
+
   $('tasksSummary').innerHTML = `<div class="kv">
     <div><b>${fmt(list.length)}</b><span>attività</span></div>
     <div><b>${fmt(kpi.f)}</b><span>posizioni da liberare</span></div>
@@ -990,8 +1008,10 @@ $('tasksList').onclick = async e => {
   const prev = S.status[tid];
   if (act === 'todo') delete S.status[tid]; else S.status[tid] = act;
   S.open.delete(tid);
+  S.stVer++;
   renderTasks();
   S.busy = true;
+
   try { await setStatus(tid, act === 'todo' ? null : act); }
   catch(err){
     if (prev === undefined) delete S.status[tid]; else S.status[tid] = prev;
@@ -1159,8 +1179,9 @@ async function ping(){
     hbFails = 0; setConn(true);
     if (!S.busy && !S.demo){
       try {
-        const m = await loadStatus();
-        if (!S.busy && stKey(m) !== stKey(S.status)){ S.status = m; renderTasks(); }
+        const v = S.stVer, m = await loadStatus();
+        if (!S.busy && v === S.stVer && stKey(m) !== stKey(S.status)){ S.status = m; renderTasks(); }
+
       } catch(e){}
     }
 
