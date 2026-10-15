@@ -313,6 +313,8 @@ td input.missing{border-color:var(--hazard)}
 const SB_URL = 'https://fndjrfieitieqzafhyzz.supabase.co';
 const SB_KEY = 'sb_publishable_bHDKjiKAVHqW199ICw7i2g_O3olYMAr';
 const TABLE  = 'articoli';
+const STOCK_TABLE = 'giacenza';
+
 const SB_HEADERS = {apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`};
 
 /* ================= ALGORITM (pur, testabil) ================= */
@@ -384,10 +386,7 @@ const S = {
   status: {}
 };
 try { S.status = JSON.parse(localStorage.getItem('abc_status') || '{}'); } catch(e){}
-try {
-  const st = JSON.parse(localStorage.getItem('abc_stock') || 'null');
-  if (st){ S.stock = st.rows; S.stockName = st.name; S.stockTime = st.time; }
-} catch(e){}
+
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -617,30 +616,63 @@ async function confirmCaps(ok){
 }
 
 /* ================= GIACENZA ================= */
-function setStock(rows, name, demo){
-  S.stock = rows; S.stockName = name; S.stockTime = new Date().toISOString(); S.demo = !!demo;
+const UBI_OK = /^[A-Z]\.\d{2}\.\d{2}\.\d{2}$/;   // doar ubicazioni normale (exclude RESI, VIRTUALE, STIVA 01 etc.)
+
+async function loadStock(){
+  const out = [], step = 1000;
+  for (let from = 0; ; from += step){
+    const res = await sb(`${STOCK_TABLE}?select=articolo,ubicazione,cantitate,um,fisier,uploaded_at&order=id`, {headers: {Range: `${from}-${from + step - 1}`, 'Range-Unit': 'items'}});
+    const part = await res.json();
+    out.push(...part);
+    if (part.length < step) break;
+  }
+  S.stock = out.map(r => ({art: r.articolo, ubi: r.ubicazione, qty: Number(r.cantitate), um: r.um}));
+  S.stockName = out.length ? (out[0].fisier || '') : '';
+  S.stockTime = out.length ? out.reduce((m, r) => r.uploaded_at > m ? r.uploaded_at : m, '') : null;
+  S.demo = false; S.demoCap = {};
+}
+function setStock(rows, name, demo, time){
+  S.stock = rows; S.stockName = name; S.stockTime = time || new Date().toISOString(); S.demo = !!demo;
   if (!demo) S.demoCap = {};
-  try { if (!demo) localStorage.setItem('abc_stock', JSON.stringify({rows, name, time: S.stockTime})); } catch(e){}
   renderAll();
 }
 async function onStockFile(e){
   const f = e.target.files[0]; e.target.value = '';
   if (!f) return;
+  let batch = null;
   try {
     const raw = await readSheet(f), agg = new Map();
+    let lastUbi = null;
     for (const r of raw){
-      const art = clean(pick(r, ['articolo','codarticol','cod'])), ubi = clean(pick(r, ['ubicazione','codubicazione']));
-      const qty = parseNum(pick(r, ['cantitate','qta','quantit','qty','giacenza','pezzi','pz','bucati']));
-      if (!art || !ubi || !(qty > 0)) continue;
-      const k = art + '\u0001' + ubi; agg.set(k, (agg.get(k) || 0) + qty);
+      const u = clean(pick(r, ['ubicazione','codubicazione','codiubic']));
+      if (u) lastUbi = u;                         // ubicazione e scrisa doar pe primul rand al grupului
+      const art = clean(pick(r, ['articolo','codarticol','cod','cacodar']));
+      const qty = parseNum(pick(r, ['cantitate','qta','quantit','qty','giacenza','pezzi','pz','bucati','esisattu']));
+      if (!art || !lastUbi || !(qty > 0)) continue;
+      const um = clean(pick(r, ['arunmis','um']));
+      const k = art + '\u0001' + lastUbi;
+      const o = agg.get(k);
+      if (o) o.qty += qty; else agg.set(k, {art, ubi: lastUbi, qty, um});
     }
-    const rows = [...agg].map(([k, qty]) => { const [art, ubi] = k.split('\u0001'); return {art, ubi, qty}; });
-    if (!rows.length) throw new Error('Nessuna riga valida trovata (colonne: Articolo, Ubicazione, Cantitate).');
-    if (!confirm(`Caricare "${f.name}" (${rows.length} righe)?\nLa giacenza attuale verrà sostituita.`)) return;
-    setStock(rows, f.name, false);
+    const rows = [...agg.values()];
+    if (!rows.length) throw new Error('Nessuna riga valida trovata (colonne: CACODAR2, CODIUBIC, ESISATTU).');
+    if (!confirm(`Caricare "${f.name}" (${rows.length} righe)?\nLa giacenza attuale verrà sostituita per tutti.`)) return;
+    batch = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const when = new Date().toISOString();
+    const payload = rows.map(r => ({articolo: r.art, ubicazione: r.ubi, cantitate: r.qty, um: r.um, fisier: f.name, batch_id: batch, uploaded_at: when}));
+    for (let i = 0; i < payload.length; i += 500){
+      banner(`Caricamento giacenza… ${Math.min(i + 500, payload.length)} / ${payload.length}`, 'info');
+      await sb(STOCK_TABLE, {method: 'POST', headers: {Prefer: 'return=minimal'}, body: JSON.stringify(payload.slice(i, i + 500))});
+    }
+    await sb(`${STOCK_TABLE}?or=(batch_id.is.null,batch_id.neq.${encodeURIComponent(batch)})`, {method: 'DELETE'});
+    setStock(rows, f.name, false, when);
     banner(`Giacenza caricata: ${fmt(rows.length)} righe.`, 'ok');
-  } catch(err){ banner(esc(err.message), 'err'); }
+  } catch(err){
+    if (batch){ try { await sb(`${STOCK_TABLE}?batch_id=eq.${encodeURIComponent(batch)}`, {method: 'DELETE'}); } catch(e){} }
+    banner('Errore: ' + esc(err.message), 'err');
+  }
 }
+
 function genDemo(){
   if (S.stock.length && !confirm('Sostituire la giacenza attuale con dati demo?')) return;
   const cat = S.catalog.filter(r => r.articolo && r.cap_max);
@@ -735,7 +767,8 @@ function renderStock(){
 }
 function renderTasks(){
   const catalog = catMap();
-  const res = computeTasks(catalog, S.stock, S.demo ? S.demoCap : null);
+const res = computeTasks(catalog, S.stock.filter(r => UBI_OK.test(r.ubi)), S.demo ? S.demoCap : null);
+
   let list = res.tasks;
   const st = t => S.status[t.id] || 'todo';
   const kpi = list.reduce((a, t) => (a.f += t.freed, a.p += t.total, a), {f: 0, p: 0});
@@ -847,12 +880,15 @@ $('catTable').addEventListener('change', e => { if (e.target.dataset.art) saveCa
 $('catFile').onchange = onCatFile;
 $('stockFile').onchange = onStockFile;
 $('btnDemo').onclick = genDemo;
-$('btnClearStock').onclick = () => {
-  if (!S.stock.length || !confirm('Eliminare la giacenza caricata?')) return;
-  S.demo = false; S.demoCap = {}; S.stock = [];
-  try { localStorage.removeItem('abc_stock'); } catch(e){}
-  banner(''); renderAll();
+$('btnClearStock').onclick = async () => {
+  if (!S.stock.length || !confirm(S.demo ? 'Eliminare i dati demo?' : 'Eliminare la giacenza caricata (per tutti gli utenti)?')) return;
+  try {
+    if (S.demo){ await loadStock(); }
+    else { await sb(`${STOCK_TABLE}?id=gt.0`, {method: 'DELETE'}); S.stock = []; S.stockName = ''; S.stockTime = null; }
+    banner(''); renderAll();
+  } catch(err){ banner('Errore: ' + esc(err.message), 'err'); }
 };
+
 $('btnCatDownload').onclick = downloadCatalog;
 $('btnPdf').onclick = makePdf;
 $('btnCapFill').onclick = fillCaps;
@@ -1017,6 +1053,9 @@ hbStart();
   renderAll();
   try { await loadCatalog(); renderAll(); }
   catch(e){ banner('Impossibile connettersi a Supabase: ' + esc(e.message) + '. Controlla la tabella e le policy (setup_articoli.sql).', 'err'); }
+  try { await loadStock(); renderAll(); }
+  catch(e){ banner('Impossibile leggere la giacenza: ' + esc(e.message), 'err'); }
+
 })();
 </script>
 </body>
