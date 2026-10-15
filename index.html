@@ -269,7 +269,7 @@ td input.missing{border-color:var(--hazard)}
   <section class="panel hide" id="tab-stock">
     <div class="box">
       <h2>Giacenza attuale</h2>
-      <p class="muted" style="margin:0 0 8px;font-size:12px">.xlsx / .csv · colonne: Articolo, Ubicazione, Cantitate</p>
+      <p class="muted" style="margin:0 0 8px;font-size:12px">Export ERP per articolo · colonne: CACODAR2, ESISATTU, CODIUBIC_1, ESISATTU_UBI</p>
       <div class="sbar">
         <label class="btn pri">Carica<input type="file" id="stockFile" accept=".xlsx,.xls,.csv" hidden></label>
         <button class="btn" id="btnDemo">Demo</button>
@@ -636,57 +636,26 @@ function setStock(rows, name, demo, time){
   if (!demo) S.demoCap = {};
   renderAll();
 }
-
-function parseStockExport(raw){
-  const A = [], L = [];
-  for (const r of raw){
-    const art = clean(r['CACODAR2']);
-    if (art) A.push({art, tot: parseNum(r['ESISATTU']) || 0, um: clean(r['ARUNMIS1'])});
-    const ubi = clean(r['CODIUBIC_1']);
-    if (ubi) L.push({ubi, qty: parseNum(r['ESISATTU_UBI']) || 0});
-  }
-  const take = (p, t) => {
-    let s = 0, q = p;
-    while (q < L.length && s < t - 0.001 && q - p < 60){ s += L[q].qty; q++; }
-    return q > p && Math.abs(s - t) < 0.01 ? q : -1;
-  };
-  const out = [], bad = [];
-  let i = 0, p = 0, skipped = 0;
-  const push = (a, from, to) => { for (let k = from; k < to; k++) out.push({art: a.art, ubi: L[k].ubi, qty: L[k].qty, um: a.um}); };
-  while (i < A.length && p < L.length){
-    if (!(A[i].tot > 0)){ i++; continue; }
-    let q = take(p, A[i].tot);
-    if (q >= 0){ push(A[i], p, q); p = q; i++; continue; }
-    let found = false;
-    for (let k = i + 1; k < Math.min(i + 25, A.length); k++){
-      if (!(A[k].tot > 0)) continue;
-      q = take(p, A[k].tot);
-      if (q >= 0){
-        for (let j = i; j < k; j++) if (A[j].tot > 0) bad.push(A[j].art);
-        push(A[k], p, q); p = q; i = k + 1; found = true; break;
-      }
-    }
-    if (!found){ p++; skipped++; }
-  }
-  for (; i < A.length; i++) if (A[i].tot > 0) bad.push(A[i].art);
-  const agg = new Map();
-  for (const r of out){
-    const k = r.art + '\u0001' + r.ubi, o = agg.get(k);
-    if (o) o.qty += r.qty; else agg.set(k, {...r});
-  }
-  return {rows: [...agg.values()], bad, skipped};
-}
-
-
 async function onStockFile(e){
   const f = e.target.files[0]; e.target.value = '';
   if (!f) return;
   let batch = null;
   try {
-        const raw = await readSheet(f);
-    const {rows, bad} = parseStockExport(raw);
-    if (!rows.length) throw new Error('Nessuna riga valida trovata (colonne: CACODAR2, ESISATTU, CODIUBIC_1, ESISATTU_UBI).');
-
+    const raw = await readSheet(f), agg = new Map();
+    let lastUbi = null;
+    for (const r of raw){
+      const u = clean(pick(r, ['ubicazione','codubicazione','codiubic']));
+      if (u) lastUbi = u;                         // ubicazione e scrisa doar pe primul rand al grupului
+      const art = clean(pick(r, ['articolo','codarticol','cod','cacodar']));
+      const qty = parseNum(pick(r, ['cantitate','qta','quantit','qty','giacenza','pezzi','pz','bucati','esisattu']));
+      if (!art || !lastUbi || !(qty > 0)) continue;
+      const um = clean(pick(r, ['arunmis','um']));
+      const k = art + '\u0001' + lastUbi;
+      const o = agg.get(k);
+      if (o) o.qty += qty; else agg.set(k, {art, ubi: lastUbi, qty, um});
+    }
+    const rows = [...agg.values()];
+    if (!rows.length) throw new Error('Nessuna riga valida trovata (colonne: CACODAR2, CODIUBIC, ESISATTU).');
     if (!confirm(`Caricare "${f.name}" (${rows.length} righe)?\nLa giacenza attuale verrà sostituita per tutti.`)) return;
     batch = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const when = new Date().toISOString();
@@ -697,8 +666,7 @@ async function onStockFile(e){
     }
     await sb(`${STOCK_TABLE}?or=(batch_id.is.null,batch_id.neq.${encodeURIComponent(batch)})`, {method: 'DELETE'});
     setStock(rows, f.name, false, when);
-    banner(`Giacenza caricata: ${fmt(rows.length)} righe.` + (bad.length ? ` Attenzione: ${bad.length} articoli non allineati e ignorati (${esc(bad.slice(0, 5).join(', '))}).` : ''), bad.length ? 'info' : 'ok');
-
+    banner(`Giacenza caricata: ${fmt(rows.length)} righe.`, 'ok');
   } catch(err){
     if (batch){ try { await sb(`${STOCK_TABLE}?batch_id=eq.${encodeURIComponent(batch)}`, {method: 'DELETE'}); } catch(e){} }
     banner('Errore: ' + esc(err.message), 'err');
