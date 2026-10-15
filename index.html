@@ -338,6 +338,8 @@ const SB_URL = 'https://fndjrfieitieqzafhyzz.supabase.co';
 const SB_KEY = 'sb_publishable_bHDKjiKAVHqW199ICw7i2g_O3olYMAr';
 const TABLE  = 'articoli';
 const STOCK_TABLE = 'giacenza';
+const ST_ART = '__STATUS__';
+
 
 const SB_HEADERS = {apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`};
 
@@ -409,7 +411,25 @@ const S = {
   filter: 'all', sort: 'prio', open: new Set(), pendingCat: null,
   status: {}
 };
-try { S.status = JSON.parse(localStorage.getItem('abc_status') || '{}'); } catch(e){}
+S.busy = false;
+const stKey = o => JSON.stringify(Object.keys(o).sort().map(k => [k, o[k]]));
+async function loadStatus(){
+  const out = [], step = 1000;
+  for (let from = 0; ; from += step){
+    const res = await sb(`${STOCK_TABLE}?select=ubicazione,um&articolo=eq.${ST_ART}&order=id`, {headers: {Range: `${from}-${from + step - 1}`, 'Range-Unit': 'items'}});
+    const part = await res.json();
+    out.push(...part);
+    if (part.length < step) break;
+  }
+  const m = {}; out.forEach(r => m[r.ubicazione] = r.um);
+  return m;
+}
+async function setStatus(id, val){
+  if (S.demo) return;
+  await sb(`${STOCK_TABLE}?articolo=eq.${ST_ART}&ubicazione=eq.${encodeURIComponent(id)}`, {method: 'DELETE'});
+  if (val) await sb(STOCK_TABLE, {method: 'POST', headers: {Prefer: 'return=minimal'}, body: JSON.stringify({articolo: ST_ART, ubicazione: id, cantitate: 0, um: val, fisier: ST_ART})});
+}
+
 
 
 const $ = id => document.getElementById(id);
@@ -636,7 +656,8 @@ const UBI_OK = /^[A-Z]\.\d{2}\.\d{2}\.\d{2}$/;   // doar ubicazioni normale (exc
 async function loadStock(){
   const out = [], step = 1000;
   for (let from = 0; ; from += step){
-    const res = await sb(`${STOCK_TABLE}?select=articolo,ubicazione,cantitate,um,fisier,uploaded_at&order=id`, {headers: {Range: `${from}-${from + step - 1}`, 'Range-Unit': 'items'}});
+    const res = await sb(`${STOCK_TABLE}?select=articolo,ubicazione,cantitate,um,fisier,uploaded_at&articolo=neq.${ST_ART}&order=id`, {headers: {Range: `${from}-${from + step - 1}`, 'Range-Unit': 'items'}});
+
     const part = await res.json();
     out.push(...part);
     if (part.length < step) break;
@@ -750,7 +771,9 @@ async function onStockFile(e){
       await sb(STOCK_TABLE, {method: 'POST', headers: {Prefer: 'return=minimal'}, body: JSON.stringify(payload.slice(i, i + 500))});
     }
     await sb(`${STOCK_TABLE}?or=(batch_id.is.null,batch_id.neq.${encodeURIComponent(batch)})`, {method: 'DELETE'});
+    S.status = {};
     setStock(rows, f.name, false, when);
+
     banner(`Giacenza caricata: ${fmt(rows.length)} righe.` + (erp ? ` Articoli quadrati: ${fmt(erpExact)}.` : '') +
       (excluded ? ` <b>Esclusi ${erpBad.size} articoli con problemi</b> (${fmt(excluded)} righe): ${esc([...erpBad].slice(0, 6).join(', '))}${erpBad.size > 6 ? ' …' : ''}.`
         : erpWarn.length ? ` <b>Da controllare (${erpWarn.length}):</b> ${esc(erpWarn.slice(0, 5).join(' · '))}${erpWarn.length > 5 ? ' …' : ''}` : ''),
@@ -961,14 +984,23 @@ $('tasksList').addEventListener('toggle', e => {
   const id = d.dataset.id;
   d.open ? S.open.add(id) : S.open.delete(id);
 }, true);
-$('tasksList').onclick = e => {
+$('tasksList').onclick = async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
-  const tid = b.closest('details').dataset.id;
-  if (b.dataset.act === 'todo') delete S.status[tid]; else S.status[tid] = b.dataset.act;
+  const tid = b.closest('details').dataset.id, act = b.dataset.act;
+  const prev = S.status[tid];
+  if (act === 'todo') delete S.status[tid]; else S.status[tid] = act;
   S.open.delete(tid);
-  try { localStorage.setItem('abc_status', JSON.stringify(S.status)); } catch(err){}
   renderTasks();
+  S.busy = true;
+  try { await setStatus(tid, act === 'todo' ? null : act); }
+  catch(err){
+    if (prev === undefined) delete S.status[tid]; else S.status[tid] = prev;
+    renderTasks();
+    banner('Impossibile salvare lo stato: ' + esc(err.message), 'err');
+  }
+  S.busy = false;
 };
+
 $('catTable').addEventListener('change', e => { if (e.target.dataset.art) saveCap(e.target.dataset.art, e.target.value); });
 $('catFile').onchange = onCatFile;
 $('stockFile').onchange = onStockFile;
@@ -977,7 +1009,7 @@ $('btnClearStock').onclick = async () => {
   if (!S.stock.length || !confirm(S.demo ? 'Eliminare i dati demo?' : 'Eliminare la giacenza caricata (per tutti gli utenti)?')) return;
   try {
     if (S.demo){ await loadStock(); }
-    else { await sb(`${STOCK_TABLE}?id=gt.0`, {method: 'DELETE'}); S.stock = []; S.stockName = ''; S.stockTime = null; }
+    else { await sb(`${STOCK_TABLE}?id=gt.0`, {method: 'DELETE'}); S.stock = []; S.stockName = ''; S.stockTime = null; S.status = {}; }
     banner(''); renderAll();
   } catch(err){ banner('Errore: ' + esc(err.message), 'err'); }
 };
@@ -1125,6 +1157,13 @@ async function ping(){
     if (!res.ok) throw new Error(res.status);
     const recovered = hbFails >= 2 || !S.loadedOnce;
     hbFails = 0; setConn(true);
+    if (!S.busy && !S.demo){
+      try {
+        const m = await loadStatus();
+        if (!S.busy && stKey(m) !== stKey(S.status)){ S.status = m; renderTasks(); }
+      } catch(e){}
+    }
+
     if (recovered && !S.pendingCat && document.activeElement?.tagName !== 'INPUT'){
       try { await loadCatalog(); renderAll(); banner(''); } catch(e){}
     }
