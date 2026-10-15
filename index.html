@@ -48,6 +48,8 @@ nav button[aria-selected=true]{background:var(--card)}
 main{max-width:980px;margin:auto;padding:0 12px 60px}
 .panel{background:var(--card);border-radius:0 0 10px 10px;padding:14px}
 .hide{display:none!important}
+.navwarn{display:none}
+
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .btn{border:2px solid var(--ink);background:var(--card);border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;min-height:44px}
 .btn.pri{background:var(--hazard);border-color:var(--ink)}
@@ -168,7 +170,15 @@ td input.missing{border-color:var(--hazard)}
   #tasksFilter{grid-column:1;grid-row:3;flex-direction:column;overflow:visible;gap:6px;margin:0 0 10px!important;padding:0;
     -webkit-mask-image:none!important;mask-image:none!important}
   #tasksFilter button{text-align:left;border-radius:8px;padding:9px 14px}
-  #tasksWarn{grid-column:1;grid-row:4}
+  #tasksWarn{display:none}
+  .navwarn{display:block;margin-top:auto;padding-top:12px}
+  .navwarn .box{background:#2a343a;border-color:#3a464d;color:#cfd6d9;padding:8px 10px;margin:0}
+  .navwarn .box h2{font-size:15px;color:var(--hazard);margin:0 0 6px}
+  .navwarn .box div{margin-bottom:4px!important}
+  .navwarn summary{cursor:pointer;font-size:12.5px;line-height:1.3}
+  .navwarn b{color:#fff}
+  .navwarn .warnlist{max-height:140px;font-size:12px;padding-left:16px}
+
   #tasksList{grid-column:2;grid-row:1/5;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
     gap:10px;align-content:start;align-items:start;max-height:calc(100vh - 175px);overflow-y:auto;padding-right:6px}
   #tasksList>.msg,#tasksList>p{grid-column:1/-1}
@@ -229,7 +239,9 @@ td input.missing{border-color:var(--hazard)}
   <button role="tab" aria-selected="true" data-tab="tasks">Attività</button>
   <button role="tab" aria-selected="false" data-tab="stock">Giacenza</button>
   <button role="tab" aria-selected="false" data-tab="catalog">Catalogo</button>
+  <div id="navWarn" class="navwarn"></div>
 </nav>
+
 <main>
   <div id="banner"></div>
 
@@ -302,7 +314,7 @@ td input.missing{border-color:var(--hazard)}
       <div class="row">
         <label class="btn pri">Carica catalogo (.xlsx)<input type="file" id="catFile" accept=".xlsx,.xls" hidden></label>
         <button class="btn" id="btnCatDownload">Scarica catalogo (.xlsx)</button>
-<button class="btn" id="btnCapFill">Imposta capacità a tutti quelli senza</button>
+
 <button class="btn" id="btnCapExport">Esporta capacità (.xlsx)</button>
 <label class="btn">Importa capacità<input type="file" id="capFile" accept=".xlsx,.xls,.csv" hidden></label>
         <button class="btn" id="btnCatReload">Ricarica</button>
@@ -565,16 +577,7 @@ async function saveCap(art, val){
     banner('Impossibile salvare la capacità (ripristinato il valore precedente): ' + esc(err.message), 'err');
   }
 }
-async function fillCaps(){
-  const v = Math.round(Number(prompt('Capacità max. per tutti gli articoli senza capacità (pz):', '300')));
-  if (!(v > 0)) return;
-  if (!confirm(`Impostare capacità ${v} pz a TUTTI gli articoli senza capacità?`)) return;
-  try {
-    await sb(`${TABLE}?articolo=not.is.null&cap_max=is.null`, {method: 'PATCH', headers: {Prefer: 'return=minimal'}, body: JSON.stringify({cap_max: v})});
-    await loadCatalog(); renderAll();
-    banner(`Capacità ${v} impostata sugli articoli che ne erano privi. Puoi modificarla singolarmente.`, 'ok');
-  } catch(err){ banner('Errore: ' + esc(err.message), 'err'); }
-}
+
 
 function exportCaps(){
   const m = new Map();
@@ -895,15 +898,18 @@ const res = computeTasks(catalog, S.stock.filter(r => UBI_OK.test(r.ubi)), S.dem
         </div>
       </div></details>`;
   }).join('');
-
   const w = [];
   const names = a => `<ul class="warnlist">${a.slice(0, 80).map(x => `<li>${esc(x)}</li>`).join('')}${a.length > 80 ? '<li>…</li>' : ''}</ul>`;
-  if (res.noCap.length) w.push(`<details><summary><b>${res.noCap.length}</b> articoli con giacenza in scorta ma senza capacità (non calcolabili)</summary>${names(res.noCap)}</details>`);
-  if (res.noCatalog.length) w.push(`<details><summary><b>${res.noCatalog.length}</b> articoli in giacenza non trovati nel catalogo</summary>${names(res.noCatalog)}</details>`);
+  if (res.noCap.length) w.push(`<details><summary><b>${res.noCap.length}</b> articoli con scorta ma senza capacità massima impostata per la casella (non calcolabili)</summary>${names(res.noCap)}</details>`);
+  if (res.noCatalog.length) w.push(`<details><summary><b>${res.noCatalog.length}</b> articoli in giacenza senza casella (senza picking)</summary>${names(res.noCatalog)}</details>`);
   if (res.full.length) w.push(`<details><summary><b>${res.full.length}</b> articoli con casella già piena (nulla da spostare)</summary>${names(res.full)}</details>`);
   if (res.noFit.length) w.push(`<details><summary><b>${res.noFit.length}</b> articoli per cui nessuna scorta entra per intero</summary>${names(res.noFit)}</details>`);
-  $('tasksWarn').innerHTML = w.length ? `<div class="box" style="margin-top:14px"><h2>Articoli saltati</h2>${w.map(x => `<div style="margin-bottom:6px">${x}</div>`).join('')}</div>` : '';
+  const warnHtml = w.length ? `<div class="box" style="margin-top:14px"><h2>Articoli saltati</h2>${w.map(x => `<div style="margin-bottom:6px">${x}</div>`).join('')}</div>` : '';
+  $('tasksWarn').innerHTML = warnHtml;
+  $('navWarn').innerHTML = warnHtml;
 }
+
+
 
 /* ================= EVENIMENTE ================= */
 const PW = 'kin';
@@ -978,7 +984,7 @@ $('btnClearStock').onclick = async () => {
 
 $('btnCatDownload').onclick = downloadCatalog;
 $('btnPdf').onclick = makePdf;
-$('btnCapFill').onclick = fillCaps;
+
 $('btnCapExport').onclick = exportCaps;
 $('capFile').onchange = onCapFile;
 $('btnCatReload').onclick = async () => { try { await loadCatalog(); renderAll(); banner(''); } catch(e){ banner('Errore: ' + esc(e.message), 'err'); } };
