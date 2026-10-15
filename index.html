@@ -362,7 +362,7 @@ td input.missing{border-color:var(--hazard)}
     <div class="box">
       <h2>Catalogo articoli / caselle</h2>
       <div id="catInfo"></div>
-      <p class="muted">.xlsx · colonne: Cod Magazzino, Cod ubicazione, Articolo, Descrizione (facoltativa: Capacitate). Il catalogo viene sostituito; le capacità esistenti restano (per codice articolo).</p>
+      <p class="muted">.xlsx · colonne: Cod Magazzino, Cod ubicazione, Articolo, Descrizione (facoltative: Capacitate, Scatola = pezzi per scatola). Il catalogo viene sostituito; le capacità esistenti restano (per codice articolo).</p>
       <div class="row">
         <label class="btn pri">Carica catalogo (.xlsx)<input type="file" id="catFile" accept=".xlsx,.xls" hidden></label>
         <button class="btn" id="btnCatDownload">Scarica catalogo (.xlsx)</button>
@@ -398,19 +398,20 @@ const SB_HEADERS = {apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`};
 /* ================= ALGORITM (pur, testabil) ================= */
 /*ALGO-START*/
 // Sceglie il sottoinsieme di scorte che sta entro "rem" pezzi.
-// P1: massimo numero di posizioni liberate; P2: massima quantità spostata.
-function solveSubset(rem, items){
+// P1: massimo numero di posizioni liberate; P2: massima quantita spostata
+// (small=true: a parita di posizioni preferisce la quantita MINORE, cioe svuota le scorte piu piccole)
+function solveSubset(rem, items, small){
   let it = items.filter(x => x.qty > 0 && x.qty <= rem).sort((a,b) => a.qty - b.qty);
-  if (it.length > 24) it = it.slice(0, 24);          // limite di sicurezza (le 24 più piccole)
+  if (it.length > 24) it = it.slice(0, 24);          // limite di sicurezza (le 24 piu piccole)
   let best = null, nodes = 0;
   const chosen = [];
   (function rec(i, n, sum){
     if (++nodes > 2000000) return;
-    if (n > 0 && (!best || n > best.n || (n === best.n && sum > best.sum))) best = {n, sum, pick: chosen.slice()};
-    // limite superiore: quanti elementi possono ancora entrare (prima i più piccoli)
+    if (n > 0 && (!best || n > best.n || (n === best.n && (small ? sum < best.sum : sum > best.sum)))) best = {n, sum, pick: chosen.slice()};
+    // limite superiore: quanti elementi possono ancora entrare (prima i piu piccoli)
     let s = sum, k = 0;
     for (let j = i; j < it.length; j++){ if (s + it[j].qty > rem) break; s += it[j].qty; k++; }
-    if (best && (n + k < best.n || (n + k === best.n && best.sum === rem))) return;
+    if (best && (n + k < best.n || (!small && n + k === best.n && best.sum === rem))) return;
     for (let j = i; j < it.length; j++){
       if (sum + it[j].qty > rem) break;
       chosen.push(it[j]); rec(j + 1, n + 1, sum + it[j].qty); chosen.pop();
@@ -419,7 +420,31 @@ function solveSubset(rem, items){
   return best;
 }
 
-// catalog: Map(articol -> {ubi, desc, cap})   stock: [{art, ubi, qty}]
+
+/* ===== IDEA "SCATOLE INTERE" (Sergiu) =====
+   Ogni articolo puo avere nel Catalogo "Pz / scatola" (colonna cap_box).
+   Dopo aver scelto le ubicazioni da svuotare completamente (solveSubset), se resta spazio nella casella (rem),
+   si preleva PARZIALMENTE da un'altra ubicazione, in modo che vi restino solo scatole intere:
+   (qty - x) % scatola == 0, x <= rem, x il piu grande possibile. Non si supera mai cap_max.
+   Es: cap 500, casella 0, ubi 270 e 325, scatola 50 -> svuoto 270, prendo 225 da 325 (restano 100 = 2 scatole).
+   Si confrontano 2 varianti (svuotare scorte grandi o piccole) e si sceglie quella con totale maggiore;
+   a parita si preferiscono le scorte piccole svuotate. Senza scatola impostata = comportamento vecchio. */
+
+function bestPartial(rem, items, box){
+  let best = null;
+  if (!(rem > 0) || !(box > 0)) return null;
+  for (const it of items){
+    if (it.qty <= rem) continue;            // intra intreaga, nu e caz de partial
+    const r = it.qty % box;
+    if (rem < r) continue;
+    const x = r + Math.floor((rem - r) / box) * box;
+    if (x <= 0) continue;
+    if (!best || x > best.qty) best = {ubi: it.ubi, qty: x, left: it.qty - x};
+  }
+  return best;
+}
+
+// catalog: Map(articol -> {ubi, desc, cap, box})   stock: [{art, ubi, qty}]
 function computeTasks(catalog, stock, capFallback){
   const byArt = new Map(), byLoc = new Map();
   for (const r of stock){
@@ -440,19 +465,34 @@ function computeTasks(catalog, stock, capFallback){
     const casellaQty = locs.get(c.ubi) || 0;
     const rem = cap - casellaQty;
     if (rem <= 0){ full.push(art); continue; }
-    const res = solveSubset(rem, scorte);
-    if (!res){ noFit.push(art); continue; }
-    const moves = res.pick.map(p => ({ubi: p.ubi, qty: p.qty, shared: byLoc.get(p.ubi).size > 1}))
-                          .sort((a,b) => a.ubi.localeCompare(b.ubi));
+    const plan = res => {
+      const picks = res ? res.pick : [], sum = res ? res.sum : 0;
+      let part = null;
+      if (c.box){
+        const used = new Set(picks.map(p => p.ubi));
+        part = bestPartial(rem - sum, scorte.filter(s => !used.has(s.ubi)), c.box);
+      }
+      return {res, picks, sum, n: res ? res.n : 0, part, total: sum + (part ? part.qty : 0)};
+    };
+    let p = plan(solveSubset(rem, scorte, false));
+    if (c.box){
+      const p2 = plan(solveSubset(rem, scorte, true));
+      if (p2.n === p.n && p2.total >= p.total) p = p2;
+    }
+    if (!p.res && !p.part){ noFit.push(art); continue; }
+    const moves = p.picks.map(x => ({ubi: x.ubi, qty: x.qty, shared: byLoc.get(x.ubi).size > 1}))
+                         .sort((a,b) => a.ubi.localeCompare(b.ubi));
+    if (p.part) moves.push({ubi: p.part.ubi, qty: p.part.qty, shared: byLoc.get(p.part.ubi).size > 1, partial: true, left: p.part.left});
     tasks.push({
       id: art + '|' + moves.map(m => m.ubi + ':' + m.qty).join(',') + '>' + c.ubi,
       art, desc: c.desc || '', dest: c.ubi, cap, casellaQty,
-      moves, total: res.sum, freed: res.n, after: casellaQty + res.sum
+      moves, total: p.total, freed: p.n, after: casellaQty + p.total
     });
   }
   tasks.sort((a,b) => b.freed - a.freed || b.total - a.total || a.art.localeCompare(b.art));
   return {tasks, noCatalog, noCap, full, noFit};
 }
+
 /*ALGO-END*/
 
 /* ================= STARE ================= */
@@ -523,17 +563,24 @@ async function fetchAll(select){
   return out;
 }
 async function loadCatalog(){
+  const base = 'id,cod_magazzino,ubicazione,articolo,descrizione,batch_id,uploaded_at';
   try {
-    S.catalog = await fetchAll('id,cod_magazzino,ubicazione,articolo,descrizione,cap_max,batch_id,uploaded_at');
-    S.noCapCol = false;
+    S.catalog = await fetchAll(base + ',cap_max,cap_box');
+    S.noCapCol = false; S.noBoxCol = false;
   } catch(e){
-    if (/cap_max/i.test(e.message)){
-      S.catalog = await fetchAll('id,cod_magazzino,ubicazione,articolo,descrizione,batch_id,uploaded_at');
-      S.noCapCol = true;
-    } else throw e;
+    if (!/cap_box|cap_max/i.test(e.message)) throw e;
+    try {
+      S.catalog = await fetchAll(base + ',cap_max');
+      S.noCapCol = false; S.noBoxCol = true;
+    } catch(e2){
+      if (!/cap_max/i.test(e2.message)) throw e2;
+      S.catalog = await fetchAll(base);
+      S.noCapCol = true; S.noBoxCol = true;
+    }
   }
   S.loadedOnce = true;
 }
+
 
 /* ================= EXCEL ================= */
 const norm = k => String(k).toLowerCase().replace(/[^a-z]/g, '');
@@ -555,7 +602,7 @@ function parseNum(v){
 /* ================= CATALOGO: upload e sostituzione ================= */
 function catMap(){
   const m = new Map();
-  for (const r of S.catalog) if (r.articolo) m.set(r.articolo, {ubi: r.ubicazione, desc: r.descrizione, cap: r.cap_max || null});
+  for (const r of S.catalog) if (r.articolo) m.set(r.articolo, {ubi: r.ubicazione, desc: r.descrizione, cap: r.cap_max || null, box: r.cap_box || null});
   return m;
 }
 async function onCatFile(e){
@@ -574,7 +621,9 @@ async function onCatFile(e){
         ubicazione: ubi,
         articolo: clean(pick(r, ['articolo','codarticol','cod'])),
         descrizione: clean(pick(r, ['descrizione','denumire','descriere'])),
-        capFile: cap > 0 ? Math.round(cap) : null
+capFile: cap > 0 ? Math.round(cap) : null,
+        boxFile: (n => n > 0 ? Math.round(n) : null)(parseNum(pick(r, ['scatola','pzscatola','pzperscatola','cutie','pzcutie','pzpercutie','boxsize']) ?? ''))
+
       });
     }
     if (!rows.length) throw new Error('Nessuna riga valida trovata. Controlla le intestazioni delle colonne.');
@@ -584,7 +633,9 @@ async function onCatFile(e){
     for (const r of rows) if (r.articolo){ if (seen.has(r.articolo)) dup++; seen.add(r.articolo); }
     let keep = 0, fromFile = 0;
     for (const r of rows){
-      if (!r.articolo){ r.cap_max = null; continue; }
+if (!r.articolo){ r.cap_max = null; r.cap_box = null; continue; }
+      r.cap_box = r.boxFile || old.get(r.articolo)?.box || null;
+
       if (r.capFile){ r.cap_max = r.capFile; fromFile++; }
       else if (old.get(r.articolo)?.cap){ r.cap_max = old.get(r.articolo).cap; keep++; }
       else r.cap_max = null;
@@ -606,7 +657,9 @@ async function confirmCatalog(){
   const when = new Date().toISOString();
   const payload = rows.map(r => {
     const o = {cod_magazzino: r.cod_magazzino, ubicazione: r.ubicazione, articolo: r.articolo, descrizione: r.descrizione, batch_id: batch, uploaded_at: when};
-    if (!S.noCapCol) o.cap_max = r.cap_max;
+if (!S.noCapCol) o.cap_max = r.cap_max;
+    if (!S.noBoxCol) o.cap_box = r.cap_box;
+
     return o;
   });
   const btns = $('catPreview').querySelectorAll('button'); btns.forEach(b => b.disabled = true);
@@ -627,7 +680,7 @@ async function confirmCatalog(){
   }
 }
 function downloadCatalog(){
-  const data = S.catalog.map(r => ({'Cod Magazzino': r.cod_magazzino, 'Cod ubicazione': r.ubicazione, 'Articolo': r.articolo || '', 'Descrizione': r.descrizione || '', 'Capacitate': r.cap_max || ''}));
+  const data = S.catalog.map(r => ({'Cod Magazzino': r.cod_magazzino, 'Cod ubicazione': r.ubicazione, 'Articolo': r.articolo || '', 'Descrizione': r.descrizione || '', 'Capacitate': r.cap_max || '', 'Scatola': r.cap_box || ''}));
   const ws = XLSX.utils.json_to_sheet(data), wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Catalogo');
   XLSX.writeFile(wb, 'catalogo_articoli.xlsx');
@@ -654,7 +707,24 @@ async function saveCap(art, val){
 }
 
 
+async function saveBox(art, val){
+  const n = val === '' ? null : Math.round(Number(val));
+  if (n !== null && !(n > 0)) return renderCatalog();
+  const prev = S.catalog.find(r => r.articolo === art)?.cap_box ?? null;
+  const apply = v => S.catalog.forEach(r => { if (r.articolo === art) r.cap_box = v; });
+  apply(n); renderTasks();
+  try {
+    const res = await sb(`${TABLE}?articolo=eq.${encodeURIComponent(art)}&select=id`, {method: 'PATCH', headers: {Prefer: 'return=representation'}, body: JSON.stringify({cap_box: n})});
+    const done = await res.json();
+    if (!done.length) throw new Error('0 righe aggiornate. Controlla la colonna cap_box e la policy UPDATE su Supabase');
+  } catch(err){
+    apply(prev); renderCatalog(); renderTasks();
+    banner('Impossibile salvare i pezzi per scatola (ripristinato): ' + esc(err.message), 'err');
+  }
+}
+
 function exportCaps(){
+
   const m = new Map();
   for (const r of S.catalog) if (r.articolo && r.cap_max && !m.has(r.articolo))
     m.set(r.articolo, {'Articolo': r.articolo, 'Descrizione': r.descrizione || '', 'Capacitate': r.cap_max});
@@ -917,9 +987,10 @@ function renderCatalog(){
     return !lev || p[3] === lev;
   });
   const shown = rows.slice(0, 120);
-  $('catTable').innerHTML = `<thead><tr><th>Articolo</th><th>Casella</th><th class="num">Cap. max (pz)</th></tr></thead><tbody>` +
+  $('catTable').innerHTML = `<thead><tr><th>Articolo</th><th>Casella</th><th class="num">Cap. max (pz)</th><th class="num">Pz / scatola</th></tr></thead><tbody>` +
     shown.map(r => `<tr><td><b>${esc(r.articolo)}</b>${r.descrizione ? `<div class="muted" style="font-size:13px;line-height:1.25">${esc(r.descrizione)}</div>` : ''}</td><td>${esc(r.ubicazione)}</td>
-      <td class="num"><input type="number" min="1" inputmode="numeric" class="${r.cap_max ? '' : 'missing'}" value="${r.cap_max || ''}" data-art="${esc(r.articolo)}" ${S.noCapCol ? 'disabled' : ''}></td></tr>`).join('') + '</tbody>';
+      <td class="num"><input type="number" min="1" inputmode="numeric" class="${r.cap_max ? '' : 'missing'}" value="${r.cap_max || ''}" data-art="${esc(r.articolo)}" ${S.noCapCol ? 'disabled' : ''}></td>
+      <td class="num"><input type="number" min="1" inputmode="numeric" value="${r.cap_box || ''}" data-boxart="${esc(r.articolo)}" ${S.noBoxCol ? 'disabled' : ''}></td></tr>`).join('') + '</tbody>';
   $('catMore').textContent = rows.length > shown.length ? `Visualizzati ${shown.length} di ${fmt(rows.length)} risultati. Restringi i filtri.` : `${fmt(rows.length)} risultati`;
 }
 
@@ -966,11 +1037,11 @@ const res = computeTasks(catalog, S.stock.filter(r => UBI_OK.test(r.ubi)), S.dem
       <summary>
         <div><span class="dest">${esc(t.dest)}</span> <span class="art">${esc(t.art)}</span></div>
         <div class="desc">${esc(t.desc)}</div>
-        <div class="chips"><span class="chip">${fmt(t.total)} pz</span><span class="chip free">${t.freed} ${t.freed === 1 ? 'posizione liberata' : 'posizioni liberate'}</span></div>
+        <div class="chips"><span class="chip">${fmt(t.total)} pz</span><span class="chip free">${t.freed === 0 ? 'prelievo parziale' : t.freed + ' ' + (t.freed === 1 ? 'posizione liberata' : 'posizioni liberate')}</span></div>
       </summary>
       <div class="steps">
         ${t.moves.map(m => `<div class="step"><span class="loc">${esc(m.ubi)}</span>
-          <span class="act">Prendo <b>${fmt(m.qty)}</b> pezzi <span class="tag">Svuota!</span>
+          <span class="act">Prendo <b>${fmt(m.qty)}</b> pezzi ${m.partial ? '<span class="tag warn">Parziale: restano ' + fmt(m.left) + ' pz (scatole chiuse)</span>' : '<span class="tag">Svuota!</span>'}
           ${m.shared ? '<span class="tag warn">contiene altri articoli</span>' : ''}</span></div>`).join('')}
         <div class="step"><span class="loc">${esc(t.dest)}</span>
           <span class="act">Deposito nella casella. Giacenza casella: ${fmt(t.casellaQty)} → <b>${fmt(t.after)}</b> / ${fmt(t.cap)} pz</span></div>
@@ -1076,7 +1147,10 @@ $('tasksList').onclick = async e => {
   S.busy = false;
 };
 
-$('catTable').addEventListener('change', e => { if (e.target.dataset.art) saveCap(e.target.dataset.art, e.target.value); });
+$('catTable').addEventListener('change', e => {
+  if (e.target.dataset.boxart) saveBox(e.target.dataset.boxart, e.target.value);
+  else if (e.target.dataset.art) saveCap(e.target.dataset.art, e.target.value);
+});
 $('catFile').onchange = onCatFile;
 $('stockFile').onchange = onStockFile;
 $('btnDemo').onclick = genDemo;
@@ -1144,11 +1218,12 @@ function makePdf(){
     doc.setTextColor(0); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
     doc.text(`${t.total} pz`, W - M - 3, top + 6.5, {align: 'right'});
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-    doc.text(`${t.freed} ${t.freed === 1 ? 'posizione liberata' : 'posizioni liberate'}`, W - M - 3, top + 11.5, {align: 'right'});
+doc.text(t.freed === 0 ? 'prelievo parziale' : `${t.freed} ${t.freed === 1 ? 'posizione liberata' : 'posizioni liberate'}`, W - M - 3, top + 11.5, {align: 'right'});
+
     let ry = top + 14; doc.setDrawColor(190); doc.line(M, ry, W - M, ry); doc.setDrawColor(0);
     t.moves.forEach(m => {
       ry += 7; doc.rect(M + 3, ry - 5, 4, 4);
-      parts(M + 10, ry - 1.7, [['Prelevare da ', false], [m.ubi, true], [`:  ${m.qty} pz  (svuotare)`, false], [m.shared ? '  - contiene altri articoli' : '', false]], 11);
+      parts(M + 10, ry - 1.7, [['Prelevare da ', false], [m.ubi, true], [`:  ${m.qty} pz  ${m.partial ? '(parziale, restano ' + m.left + ' pz)' : '(svuotare)'}`, false], [m.shared ? '  - contiene altri articoli' : '', false]], 11);
     });
     ry += 7; doc.rect(M + 3, ry - 5, 4, 4);
     parts(M + 10, ry - 1.7, [['Depositare in casella ', false], [t.dest, true]], 11);
