@@ -724,15 +724,15 @@ async function saveBox(art, val){
 }
 
 function exportCaps(){
-
   const m = new Map();
-  for (const r of S.catalog) if (r.articolo && r.cap_max && !m.has(r.articolo))
-    m.set(r.articolo, {'Articolo': r.articolo, 'Descrizione': r.descrizione || '', 'Capacitate': r.cap_max});
-  if (!m.size) return banner('Nessun articolo con capacità da esportare.', 'err');
+  for (const r of S.catalog) if (r.articolo && (r.cap_max || r.cap_box) && !m.has(r.articolo))
+    m.set(r.articolo, {'Articolo': r.articolo, 'Descrizione': r.descrizione || '', 'Capacitate': r.cap_max || '', 'Scatola': r.cap_box || ''});
+  if (!m.size) return banner('Nessun articolo con capacità o scatola da esportare.', 'err');
   const ws = XLSX.utils.json_to_sheet([...m.values()]), wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Capacita');
   XLSX.writeFile(wb, 'capacita_max_' + new Date().toISOString().slice(0, 10) + '.xlsx');
 }
+
 async function onCapFile(e){
   const f = e.target.files[0]; e.target.value = '';
   if (!f) return;
@@ -740,40 +740,49 @@ async function onCapFile(e){
     const raw = await readSheet(f), imp = new Map();
     for (const r of raw){
       const art = clean(pick(r, ['articolo','codarticol','cod']));
-      const cap = parseNum(pick(r, ['capacitate','capacitatemax','capmax','capacita','cap']));
-      if (art && cap > 0) imp.set(art, Math.round(cap));
+      const cap = parseNum(pick(r, ['capacitate','capacitatemax','capmax','capacita','cap']) ?? '');
+      const box = parseNum(pick(r, ['scatola','pzscatola','pzperscatola','cutie','pzcutie','pzpercutie','boxsize']) ?? '');
+      if (art && (cap > 0 || box > 0)) imp.set(art, {cap: cap > 0 ? Math.round(cap) : null, box: box > 0 ? Math.round(box) : null});
     }
-    if (!imp.size) throw new Error('Nessuna riga valida (colonne: Articolo, Capacitate).');
+    if (!imp.size) throw new Error('Nessuna riga valida (colonne: Articolo, Capacitate, Scatola).');
     if (!S.loadedOnce) await loadCatalog();
     const exist = new Set(S.catalog.filter(r => r.articolo).map(r => r.articolo));
     const ok = [...imp].filter(([a]) => exist.has(a));
     const skipped = imp.size - ok.length;
     if (!ok.length) throw new Error('Nessun articolo del file esiste nel catalogo.');
-    $('catPreview').innerHTML = `<div class="msg info"><b>${esc(f.name)}</b>: ${fmt(ok.length)} articoli esistenti riceveranno la capacità (sovrascritta se già presente).
-      ${skipped ? `<br>${fmt(skipped)} articoli non presenti nel catalogo verranno ignorati.` : ''}</div>
+    const nCap = ok.filter(([a, v]) => v.cap).length, nBox = ok.filter(([a, v]) => v.box).length;
+    $('catPreview').innerHTML = `<div class="msg info"><b>${esc(f.name)}</b>: ${fmt(ok.length)} articoli esistenti verranno aggiornati (${fmt(nCap)} capacità, ${fmt(nBox)} scatole; i valori già presenti vengono sovrascritti).
+      ${skipped ? `<br>${fmt(skipped)} articoli non presenti nel catalogo verranno ignorati.` : ''}
+      ${nBox && S.noBoxCol ? '<br><b>Attenzione:</b> la colonna cap_box non esiste su Supabase, le scatole verranno ignorate.' : ''}</div>
       <div class="row"><button class="btn pri" id="btnCapConfirm">Conferma importazione</button><button class="btn" id="btnCapCancel">Annulla</button></div>`;
     $('btnCapCancel').onclick = () => { $('catPreview').innerHTML = ''; };
     $('btnCapConfirm').onclick = () => confirmCaps(ok);
   } catch(err){ $('catPreview').innerHTML = `<div class="msg err">${esc(err.message)}</div>`; }
 }
+
 async function confirmCaps(ok){
   $('catPreview').querySelectorAll('button').forEach(b => b.disabled = true);
   try {
-    const byCap = new Map();
-    for (const [a, c] of ok){ if (!byCap.has(c)) byCap.set(c, []); byCap.get(c).push(a); }
-    let rowsDone = 0;
-    for (const [cap, arts] of byCap){
-      for (let i = 0; i < arts.length; i += 80){
-        const list = arts.slice(i, i + 80).map(a => encodeURIComponent(q(a))).join(',');
-        const res = await sb(`${TABLE}?articolo=in.(${list})&select=id`, {method: 'PATCH', headers: {Prefer: 'return=representation'}, body: JSON.stringify({cap_max: cap})});
-        rowsDone += (await res.json()).length;
+    const ids = new Set();
+    const run = async (field, pairs) => {
+      const byVal = new Map();
+      for (const [a, v] of pairs){ if (!byVal.has(v)) byVal.set(v, []); byVal.get(v).push(a); }
+      for (const [val, arts] of byVal){
+        for (let i = 0; i < arts.length; i += 80){
+          const list = arts.slice(i, i + 80).map(a => encodeURIComponent(q(a))).join(',');
+          const res = await sb(`${TABLE}?articolo=in.(${list})&select=id`, {method: 'PATCH', headers: {Prefer: 'return=representation'}, body: JSON.stringify({[field]: val})});
+          (await res.json()).forEach(x => ids.add(x.id));
+        }
       }
-    }
-    if (!rowsDone) throw new Error('0 righe aggiornate. Controlla la policy UPDATE su Supabase.');
+    };
+    await run('cap_max', ok.filter(([a, v]) => v.cap).map(([a, v]) => [a, v.cap]));
+    if (!S.noBoxCol) await run('cap_box', ok.filter(([a, v]) => v.box).map(([a, v]) => [a, v.box]));
+    if (!ids.size) throw new Error('0 righe aggiornate. Controlla la policy UPDATE su Supabase.');
     await loadCatalog(); renderAll();
-    $('catPreview').innerHTML = `<div class="msg ok">Capacità importata su ${fmt(ok.length)} articoli (${fmt(rowsDone)} righe aggiornate).</div>`;
+    $('catPreview').innerHTML = `<div class="msg ok">Importazione completata su ${fmt(ok.length)} articoli (${fmt(ids.size)} righe aggiornate).</div>`;
   } catch(err){ $('catPreview').innerHTML = `<div class="msg err">Errore: ${esc(err.message)}</div>`; }
 }
+
 
 /* ================= GIACENZA ================= */
 const UBI_OK = /^[A-Z]\.\d{2}\.\d{2}\.\d{2}$/;   // doar ubicazioni normale (exclude RESI, VIRTUALE, STIVA 01 etc.)
