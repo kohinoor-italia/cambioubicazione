@@ -101,6 +101,18 @@ td input.missing{border-color:var(--hazard)}
 .seg{display:flex;gap:4px;flex-wrap:wrap}
 .seg button{border:2px solid var(--line);background:#fff;border-radius:999px;padding:6px 14px;cursor:pointer;font-weight:600}
 .seg button[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:#fff}
+/* culori filtre */
+.seg button[data-f=all]{background:#eef1f3;border-color:#d3dade}
+.seg button[data-f=todo]{background:#fff6d6;border-color:#f0d98a}
+.seg button[data-f=done]{background:var(--okbg);border-color:#a9d9bf}
+.seg button[data-f=problem]{background:var(--badbg);border-color:#efb3ae}
+.seg button[data-f=all][aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:#fff}
+.seg button[data-f=todo][aria-pressed=true]{background:var(--hazard);border-color:#b88a00;color:var(--ink)}
+.seg button[data-f=done][aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}
+.seg button[data-f=problem][aria-pressed=true]{background:var(--bad);border-color:var(--bad);color:#fff}
+.seg button[aria-pressed=true] .bdg.ok{background:#fff;color:var(--ok)}
+.seg button[aria-pressed=true] .bdg.bad{background:#fff;color:var(--bad)}
+
 .seg button .bdg{display:inline-block;min-width:18px;margin-left:6px;padding:0 6px;border-radius:999px;font-size:12px;line-height:18px;text-align:center;color:#fff}
 .seg button .bdg.ok{background:var(--ok)}
 .seg button .bdg.bad{background:var(--bad)}
