@@ -270,6 +270,18 @@ td input.missing{border-color:var(--hazard)}
     <div class="box">
       <h2>Giacenza attuale</h2>
       <p class="muted" style="margin:0 0 8px;font-size:12px">Export ERP per articolo · colonne: CACODAR2, ESISATTU, CODIUBIC_1, ESISATTU_UBI</p>
+      <details style="margin:0 0 10px;font-size:13px">
+        <summary style="cursor:pointer;font-weight:600">Come caricare la giacenza</summary>
+        <ol style="margin:6px 0 0;padding-left:20px;line-height:1.5">
+          <li>Apri <b>AdHoc</b>. Nella pagina principale seleziona <b>Logistica</b>.</li>
+          <li>Nella barra degli strumenti clicca <b>Report</b>.</li>
+          <li>Sul lato destro seleziona <b>Inventario fisico con Lotti e ubicazioni</b>.</li>
+          <li>Alla voce <b>Lotti/ubicazioni/matricole</b> seleziona <b>Ubicazioni</b>. Non serve cambiare altro.</li>
+          <li>Scegli il formato <b>xlsx</b> e scarica il file.</li>
+          <li>Torna qui, premi <b>Carica</b> e seleziona il file scaricato.</li>
+        </ol>
+      </details>
+
       <div class="sbar">
         <label class="btn pri">Carica<input type="file" id="stockFile" accept=".xlsx,.xls,.csv" hidden></label>
         <button class="btn" id="btnDemo">Demo</button>
