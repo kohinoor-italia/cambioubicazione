@@ -652,7 +652,7 @@ function parseErpStock(raw){
     if (ubi && qv > 0) U.push({i, ubi, qty: qv});
   });
 
-  const agg = new Map(), warn = [];
+  const agg = new Map(), warn = [], bad = new Set();
   let p = 0, exact = 0;
   A.forEach((a, k) => {
     if (!(a.tot > 0)) return;
@@ -666,9 +666,9 @@ function parseErpStock(raw){
       best = {end: qi, sum: s};
       if (s === a.tot) break;
     }
-    if (!best){ warn.push(`${a.art}: nicio ubicazione găsită (total ${a.tot})`); return; }
+    if (!best){ bad.add(a.art); warn.push(`${a.art} (rând ${a.i + 2}): nicio ubicazione găsită (total ${a.tot})`); return; }
     if (best.sum === a.tot) exact++;
-    else warn.push(`${a.art}: total ${a.tot}, ubicazioni ${best.sum}`);
+    else { bad.add(a.art); warn.push(`${a.art} (rând ${a.i + 2}): total ${a.tot}, ubicazioni ${best.sum}`); }
     for (let j = p; j < best.end; j++){
       if (U[j].qty > a.tot) continue;
       const key = a.art + '\u0001' + U[j].ubi, o = agg.get(key);
@@ -676,7 +676,7 @@ function parseErpStock(raw){
     }
     p = best.end;
   });
-  return {rows: [...agg.values()], warn, exact};
+  return {rows: [...agg.values()], warn, bad, exact};
 }
 
 async function onStockFile(e){
@@ -685,9 +685,9 @@ async function onStockFile(e){
   let batch = null;
   try {
     const raw = await readSheet(f);
-    let rows, erpWarn = [], erpExact = 0;
+    let rows, erpWarn = [], erpBad = new Set(), erpExact = 0, excluded = 0;
     const erp = parseErpStock(raw);
-    if (erp){ rows = erp.rows; erpWarn = erp.warn; erpExact = erp.exact; }
+    if (erp){ rows = erp.rows; erpWarn = erp.warn; erpBad = erp.bad; erpExact = erp.exact; }
     else {
       const normX = k => String(k).toLowerCase().replace(/[^a-z0-9_]/g, '');
       const pickP = (row, names) => {
@@ -715,8 +715,18 @@ async function onStockFile(e){
     }
 
     if (!rows.length) throw new Error('Nessuna riga valida trovata (colonne: CACODAR2, CODIUBIC_1, ESISATTU, ESISATTU_UBI).');
-    const wTxt = erpWarn.length ? `\n\nATTENZIONE: ${erpWarn.length} articoli non quadrano:\n` + erpWarn.slice(0, 8).join('\n') + (erpWarn.length > 8 ? '\n…' : '') : '';
+
+    let wTxt = '';
+    if (erpWarn.length) wTxt = `\n\nATTENZIONE: ${erpWarn.length} articoli non quadrano:\n` + erpWarn.slice(0, 8).join('\n') + (erpWarn.length > 8 ? '\n…' : '');
     if (!confirm(`Caricare "${f.name}" (${rows.length} righe)?\nLa giacenza attuale verrà sostituita per tutti.${wTxt}`)) return;
+
+    if (erpBad.size && confirm(`Escludere i ${erpBad.size} articoli con problemi dal caricamento?\n\nOK = escludi (non vengono caricati)\nAnnulla = carica comunque`)){
+      const before = rows.length;
+      rows = rows.filter(r => !erpBad.has(r.art));
+      excluded = before - rows.length;
+      if (!rows.length) throw new Error('Nessuna riga rimasta dopo l\'esclusione.');
+    }
+
     batch = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const when = new Date().toISOString();
     const payload = rows.map(r => ({articolo: r.art, ubicazione: r.ubi, cantitate: r.qty, um: r.um, fisier: f.name, batch_id: batch, uploaded_at: when}));
@@ -727,13 +737,15 @@ async function onStockFile(e){
     await sb(`${STOCK_TABLE}?or=(batch_id.is.null,batch_id.neq.${encodeURIComponent(batch)})`, {method: 'DELETE'});
     setStock(rows, f.name, false, when);
     banner(`Giacenza caricata: ${fmt(rows.length)} righe.` + (erp ? ` Articoli quadrati: ${fmt(erpExact)}.` : '') +
-      (erpWarn.length ? ` <b>Da controllare (${erpWarn.length}):</b> ${esc(erpWarn.slice(0, 5).join(' · '))}${erpWarn.length > 5 ? ' …' : ''}` : ''),
+      (excluded ? ` <b>Esclusi ${erpBad.size} articoli con problemi</b> (${fmt(excluded)} righe): ${esc([...erpBad].slice(0, 6).join(', '))}${erpBad.size > 6 ? ' …' : ''}.`
+        : erpWarn.length ? ` <b>Da controllare (${erpWarn.length}):</b> ${esc(erpWarn.slice(0, 5).join(' · '))}${erpWarn.length > 5 ? ' …' : ''}` : ''),
       erpWarn.length ? 'info' : 'ok');
   } catch(err){
     if (batch){ try { await sb(`${STOCK_TABLE}?batch_id=eq.${encodeURIComponent(batch)}`, {method: 'DELETE'}); } catch(e){} }
     banner('Errore: ' + esc(err.message), 'err');
   }
 }
+
 
 
 function genDemo(){
