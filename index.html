@@ -362,7 +362,20 @@ td input.missing{border-color:var(--hazard)}
     <div class="box">
       <h2>Catalogo articoli / caselle</h2>
       <div id="catInfo"></div>
-      <p class="muted">.xlsx · colonne: Cod Magazzino, Cod ubicazione, Articolo, Descrizione (facoltative: Capacitate, Scatola = pezzi per scatola). Il catalogo viene sostituito; le capacità esistenti restano (per codice articolo).</p>
+<p class="muted">.xlsx · colonne: Cod Magazzino, Cod ubicazione, Articolo, Descrizione (facoltative: Capacitate, Scatola = pezzi per scatola). Il catalogo viene sostituito; capacita e scatole esistenti restano (per codice articolo).</p>
+      <details style="margin:0 0 10px;font-size:13px">
+        <summary style="cursor:pointer;font-weight:600">Come caricare il catalogo</summary>
+        <ol style="margin:6px 0 0;padding-left:20px;line-height:1.5">
+          <li>Apri <b>AdHoc</b> ed entra in <b>Logistica</b>.</li>
+          <li>Vai su <b>Report</b>.</li>
+          <li>Seleziona <b>ITACOM - Stampa ubicazioni non collocate</b>.</li>
+          <li>Seleziona <b>Modello XLSX</b>.</li>
+          <li>Nei <b>filtri di ricerca</b> imposta dall'ubicazione piu bassa a quella piu alta.</li>
+          <li>Premi il pulsante arancione <b>Scarica</b>.</li>
+          <li>Torna qui, premi <b>Carica catalogo</b> e seleziona il file scaricato.</li>
+        </ol>
+      </details>
+
       <div class="row">
         <label class="btn pri">Carica catalogo (.xlsx)<input type="file" id="catFile" accept=".xlsx,.xls" hidden></label>
         <button class="btn" id="btnCatDownload">Scarica catalogo (.xlsx)</button>
@@ -643,7 +656,8 @@ if (!r.articolo){ r.cap_max = null; r.cap_box = null; continue; }
     S.pendingCat = rows;
     const withArt = rows.filter(r => r.articolo).length;
     $('catPreview').innerHTML = `<div class="msg info"><b>${esc(f.name)}</b>: ${fmt(rows.length)} righe, ${fmt(withArt)} articoli, ${fmt(rows.length - withArt)} ubicazioni vuote.
-      Capacità: ${fmt(fromFile)} dal file, ${fmt(keep)} mantenute dal catalogo attuale.
+      Capacità: ${fmt(fromFile)} dal file, ${fmt(keep)} mantenute dal catalogo attuale. Scatole: ${fmt(rows.filter(r => r.cap_box).length)} articoli.
+
       ${dup ? `<br><b>Attenzione:</b> ${fmt(dup)} codici articolo compaiono più volte.` : ''}
       <br>Il catalogo attuale (${fmt(S.catalog.length)} righe) verrà sostituito completamente.</div>
       <div class="row"><button class="btn pri" id="btnCatConfirm">Conferma sostituzione</button><button class="btn" id="btnCatCancel">Annulla</button></div>`;
