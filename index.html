@@ -102,16 +102,28 @@ td input.missing{border-color:var(--hazard)}
 .seg button{border:2px solid var(--line);background:#fff;border-radius:999px;padding:6px 14px;cursor:pointer;font-weight:600}
 .seg button[aria-pressed=true]{border-color:var(--ink);background:var(--ink);color:#fff}
 /* culori filtre */
-.seg button[data-f=all]{background:#eef1f3;border-color:#d3dade}
-.seg button[data-f=todo]{background:#fff6d6;border-color:#f0d98a}
-.seg button[data-f=done]{background:var(--okbg);border-color:#a9d9bf}
-.seg button[data-f=problem]{background:var(--badbg);border-color:#efb3ae}
-.seg button[data-f=all][aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:#fff}
-.seg button[data-f=todo][aria-pressed=true]{background:var(--hazard);border-color:#b88a00;color:var(--ink)}
-.seg button[data-f=done][aria-pressed=true]{background:var(--ok);border-color:var(--ok);color:#fff}
-.seg button[data-f=problem][aria-pressed=true]{background:var(--bad);border-color:var(--bad);color:#fff}
+.seg button[data-f=all]{--c:#2b363c;--c2:#52646e}
+.seg button[data-f=todo]{--c:#e09a00;--c2:#ffc933;--t:#8a5a00}
+.seg button[data-f=done]{--c:#1f7a4d;--c2:#34b36f}
+.seg button[data-f=problem]{--c:#b3261e;--c2:#ee5a4e}
+.seg button[data-f]{background:#fff;color:var(--t,var(--c));border:2px solid color-mix(in srgb,var(--c) 28%,#fff);
+  box-shadow:0 1px 2px rgba(28,34,38,.06);transition:background .15s,color .15s,box-shadow .15s,transform .1s}
+.seg button[data-f]:hover{background:color-mix(in srgb,var(--c) 9%,#fff)}
+.seg button[data-f]:active{transform:scale(.97)}
+.seg button[data-f][aria-pressed=true]{background:linear-gradient(135deg,var(--c),var(--c2));border-color:var(--c);color:#fff;
+  box-shadow:0 4px 12px color-mix(in srgb,var(--c) 38%,transparent)}
+.seg button[data-f=todo][aria-pressed=true]{color:var(--ink)}
 .seg button[aria-pressed=true] .bdg.ok{background:#fff;color:var(--ok)}
 .seg button[aria-pressed=true] .bdg.bad{background:#fff;color:var(--bad)}
+#tasksFilter button{display:inline-flex;align-items:center;gap:0}
+#tasksFilter button::before{content:"";flex:none;width:16px;height:16px;margin-right:6px;background:currentColor;
+  -webkit-mask:var(--i) center/contain no-repeat;mask:var(--i) center/contain no-repeat}
+#tasksFilter button[data-f=all]{--i:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'><rect x='3' y='3' width='7' height='7' rx='1.5'/><rect x='14' y='3' width='7' height='7' rx='1.5'/><rect x='3' y='14' width='7' height='7' rx='1.5'/><rect x='14' y='14' width='7' height='7' rx='1.5'/></svg>")}
+#tasksFilter button[data-f=todo]{--i:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M12 7v5l3 2'/></svg>")}
+#tasksFilter button[data-f=done]{--i:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M8 12.5l3 3 5-6'/></svg>")}
+#tasksFilter button[data-f=problem]{--i:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3L2 21h20L12 3z'/><path d='M12 10v5M12 18h.01'/></svg>")}
+
+
 
 .seg button .bdg{display:inline-block;min-width:18px;margin-left:6px;padding:0 6px;border-radius:999px;font-size:12px;line-height:18px;text-align:center;color:#fff}
 .seg button .bdg.ok{background:var(--ok)}
@@ -190,7 +202,15 @@ td input.missing{border-color:var(--hazard)}
   #tab-tasks .tbar input[type=search],#tab-tasks .tbar select,#tab-tasks .tbar .btn{width:100%;max-width:none}
   #tasksFilter{grid-column:1;grid-row:3;flex-direction:column;overflow:visible;gap:6px;margin:0 0 10px!important;padding:0;
     -webkit-mask-image:none!important;mask-image:none!important}
-  #tasksFilter button{text-align:left;border-radius:8px;padding:9px 14px}
+  #tasksFilter button{display:flex;align-items:center;text-align:left;border-radius:8px;padding:9px 14px}
+  #tasksFilter button::before{content:"";flex:none;width:18px;height:18px;margin-right:10px;background:currentColor;
+    -webkit-mask:var(--i) center/contain no-repeat;mask:var(--i) center/contain no-repeat}
+  #tasksFilter .bdg{margin-left:auto}
+  #tasksFilter button[data-f=all]{--i:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linejoin='round'><rect x='3' y='3' width='7' height='7' rx='1.5'/><rect x='14' y='3' width='7' height='7' rx='1.5'/><rect x='3' y='14' width='7' height='7' rx='1.5'/><rect x='14' y='14' width='7' height='7' rx='1.5'/></svg>")}
+  #tasksFilter button[data-f=todo]{--i:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M12 7v5l3 2'/></svg>")}
+  #tasksFilter button[data-f=done]{--i:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='9'/><path d='M8 12.5l3 3 5-6'/></svg>")}
+  #tasksFilter button[data-f=problem]{--i:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 3L2 21h20L12 3z'/><path d='M12 10v5M12 18h.01'/></svg>")}
+
   #tasksWarn{display:none}
   .navwarn{display:block;margin-top:auto;padding-top:12px}
   .navwarn .box{background:#2a343a;border-color:#3a464d;color:#cfd6d9;padding:8px 10px;margin:0}
@@ -240,7 +260,7 @@ td input.missing{border-color:var(--hazard)}
   td input{width:100px}
   .warnlist{max-height:200px}
 }
-</style>
+
 
 
 
@@ -279,10 +299,12 @@ td input.missing{border-color:var(--hazard)}
       <button class="btn pri" id="btnPdf">PDF</button>
     </div>
     <div class="seg" id="tasksFilter" style="margin-bottom:10px">
-      <button data-f="all" aria-pressed="false">Tutte</button>
-      <button data-f="todo" aria-pressed="true">Da fare</button>
+      <button data-f="all" aria-pressed="true">Tutte</button>
+      <button data-f="todo" aria-pressed="false">Da fare</button>
 
-      <button data-f="done" aria-pressed="false">Completate</button>
+
+      <button data-f="done" aria-pressed="false">Fatto</button>
+
       <button data-f="problem" aria-pressed="false">Problemi</button>
     </div>
     <div id="tasksList"></div>
@@ -431,7 +453,8 @@ const S = {
   catalog: [], noCapCol: false, loadedOnce: false,
   stock: [], stockName: '', stockTime: null,
   demo: false, demoCap: {},
-  filter: 'todo', sort: 'prio', open: new Set(), pendingCat: null,
+  filter: 'all', sort: 'prio', open: new Set(), pendingCat: null,
+
 
   status: {}
 };
