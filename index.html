@@ -636,37 +636,87 @@ function setStock(rows, name, demo, time){
   if (!demo) S.demoCap = {};
   renderAll();
 }
+/* ===== Corectare automată export ERP (ubicazioni decalate) ===== */
+function parseErpStock(raw){
+  const normX = k => String(k).toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const keys = raw.length ? Object.keys(raw[0]) : [];
+  const col = n => keys.find(k => normX(k) === n);
+  const cArt = col('cacodar2'), cTot = col('esisattu'), cUbi = col('codiubic_1'), cQty = col('esisattu_ubi'), cUm = col('arunmis1');
+  if (!cArt || !cTot || !cUbi || !cQty) return null;   // alt format → logica veche
+
+  const A = [], U = [];
+  raw.forEach((r, i) => {
+    const art = clean(r[cArt]);
+    if (art){ const t = parseNum(r[cTot]); A.push({i, art, tot: isFinite(t) ? t : 0, um: cUm ? clean(r[cUm]) : null}); }
+    const ubi = clean(r[cUbi]), qv = parseNum(r[cQty]);
+    if (ubi && qv > 0) U.push({i, ubi, qty: qv});
+  });
+
+  const agg = new Map(), warn = [];
+  let p = 0, exact = 0;
+  A.forEach((a, k) => {
+    if (!(a.tot > 0)) return;
+    const nxt = k + 1 < A.length ? A[k + 1].i : Infinity;
+    let s = 0, qi = p, best = null;
+    while (qi < U.length && U[qi].i <= nxt + 1){
+      const n = U[qi].qty;
+      if (n > a.tot){ qi++; continue; }          // valoare imposibilă (ex. PROVV 1.000.000)
+      if (s + n > a.tot) break;
+      s += n; qi++;
+      best = {end: qi, sum: s};
+      if (s === a.tot) break;
+    }
+    if (!best){ warn.push(`${a.art}: nicio ubicazione găsită (total ${a.tot})`); return; }
+    if (best.sum === a.tot) exact++;
+    else warn.push(`${a.art}: total ${a.tot}, ubicazioni ${best.sum}`);
+    for (let j = p; j < best.end; j++){
+      if (U[j].qty > a.tot) continue;
+      const key = a.art + '\u0001' + U[j].ubi, o = agg.get(key);
+      if (o) o.qty += U[j].qty; else agg.set(key, {art: a.art, ubi: U[j].ubi, qty: U[j].qty, um: a.um});
+    }
+    p = best.end;
+  });
+  return {rows: [...agg.values()], warn, exact};
+}
+
 async function onStockFile(e){
   const f = e.target.files[0]; e.target.value = '';
   if (!f) return;
   let batch = null;
   try {
-        const normX = k => String(k).toLowerCase().replace(/[^a-z0-9_]/g, '');
-    const pickP = (row, names) => {
-      const keys = Object.keys(row);
-      for (const n of names){
-        const k = keys.find(k => normX(k) === n);
-        if (k !== undefined && row[k] !== '') return row[k];
+    const raw = await readSheet(f);
+    let rows, erpWarn = [], erpExact = 0;
+    const erp = parseErpStock(raw);
+    if (erp){ rows = erp.rows; erpWarn = erp.warn; erpExact = erp.exact; }
+    else {
+      const normX = k => String(k).toLowerCase().replace(/[^a-z0-9_]/g, '');
+      const pickP = (row, names) => {
+        const ks = Object.keys(row);
+        for (const n of names){
+          const k = ks.find(k => normX(k) === n);
+          if (k !== undefined && row[k] !== '') return row[k];
+        }
+        return undefined;
+      };
+      const agg = new Map();
+      let lastArt = null;
+      for (const r of raw){
+        const a = clean(pickP(r, ['cacodar2','articolo','codarticol','cod','cacodar']));
+        if (a) lastArt = a;
+        const ubi = clean(pickP(r, ['codiubic_1','ubicazione','codubicazione']));
+        const qty = parseNum(pickP(r, ['esisattu_ubi','cantitate','qta','quantit','qty','giacenza','pezzi','pz','bucati']));
+        if (!lastArt || !ubi || !(qty > 0)) continue;
+        const um = clean(pickP(r, ['arunmis1','arunmis','um']));
+        const k = lastArt + '\u0001' + ubi;
+        const o = agg.get(k);
+        if (o) o.qty += qty; else agg.set(k, {art: lastArt, ubi, qty, um});
       }
-      return undefined;
-    };
-    const raw = await readSheet(f), agg = new Map();
-    let lastArt = null;
-    for (const r of raw){
-      const a = clean(pickP(r, ['cacodar2','articolo','codarticol','cod','cacodar']));
-      if (a) lastArt = a;
-      const ubi = clean(pickP(r, ['codiubic_1','ubicazione','codubicazione']));
-      const qty = parseNum(pickP(r, ['esisattu_ubi','cantitate','qta','quantit','qty','giacenza','pezzi','pz','bucati']));
-      if (!lastArt || !ubi || !(qty > 0)) continue;
-      const um = clean(pickP(r, ['arunmis1','arunmis','um']));
-      const k = lastArt + '\u0001' + ubi;
-      const o = agg.get(k);
-      if (o) o.qty += qty; else agg.set(k, {art: lastArt, ubi, qty, um});
+      rows = [...agg.values()];
     }
-    const rows = [...agg.values()];
 
-    if (!rows.length) throw new Error('Nessuna riga valida trovata (colonne: CACODAR2, CODIUBIC, ESISATTU).');
-    if (!confirm(`Caricare "${f.name}" (${rows.length} righe)?\nLa giacenza attuale verrà sostituita per tutti.`)) return;
+    if (!rows.length) throw new Error('Nessuna riga valida trovata (colonne: CACODAR2, CODIUBIC_1, ESISATTU, ESISATTU_UBI).');
+    const wTxt = erpWarn.length ? `\n\nATTENZIONE: ${erpWarn.length} articoli non quadrano:\n` + erpWarn.slice(0, 8).join('\n') + (erpWarn.length > 8 ? '\n…' : '') : '';
+    if (!confirm(`Caricare "${f.name}" (${rows.length} righe)?\nLa giacenza attuale verrà sostituita per tutti.${wTxt}`)) return;
     batch = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const when = new Date().toISOString();
     const payload = rows.map(r => ({articolo: r.art, ubicazione: r.ubi, cantitate: r.qty, um: r.um, fisier: f.name, batch_id: batch, uploaded_at: when}));
@@ -676,12 +726,15 @@ async function onStockFile(e){
     }
     await sb(`${STOCK_TABLE}?or=(batch_id.is.null,batch_id.neq.${encodeURIComponent(batch)})`, {method: 'DELETE'});
     setStock(rows, f.name, false, when);
-    banner(`Giacenza caricata: ${fmt(rows.length)} righe.`, 'ok');
+    banner(`Giacenza caricata: ${fmt(rows.length)} righe.` + (erp ? ` Articoli quadrati: ${fmt(erpExact)}.` : '') +
+      (erpWarn.length ? ` <b>Da controllare (${erpWarn.length}):</b> ${esc(erpWarn.slice(0, 5).join(' · '))}${erpWarn.length > 5 ? ' …' : ''}` : ''),
+      erpWarn.length ? 'info' : 'ok');
   } catch(err){
     if (batch){ try { await sb(`${STOCK_TABLE}?batch_id=eq.${encodeURIComponent(batch)}`, {method: 'DELETE'}); } catch(e){} }
     banner('Errore: ' + esc(err.message), 'err');
   }
 }
+
 
 function genDemo(){
   if (S.stock.length && !confirm('Sostituire la giacenza attuale con dati demo?')) return;
