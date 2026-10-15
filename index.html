@@ -641,20 +641,30 @@ async function onStockFile(e){
   if (!f) return;
   let batch = null;
   try {
+        const normX = k => String(k).toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const pickP = (row, names) => {
+      const keys = Object.keys(row);
+      for (const n of names){
+        const k = keys.find(k => normX(k) === n);
+        if (k !== undefined && row[k] !== '') return row[k];
+      }
+      return undefined;
+    };
     const raw = await readSheet(f), agg = new Map();
-    let lastUbi = null;
+    let lastArt = null;
     for (const r of raw){
-      const u = clean(pick(r, ['ubicazione','codubicazione','codiubic']));
-      if (u) lastUbi = u;                         // ubicazione e scrisa doar pe primul rand al grupului
-      const art = clean(pick(r, ['articolo','codarticol','cod','cacodar']));
-      const qty = parseNum(pick(r, ['cantitate','qta','quantit','qty','giacenza','pezzi','pz','bucati','esisattu']));
-      if (!art || !lastUbi || !(qty > 0)) continue;
-      const um = clean(pick(r, ['arunmis','um']));
-      const k = art + '\u0001' + lastUbi;
+      const a = clean(pickP(r, ['cacodar2','articolo','codarticol','cod','cacodar']));
+      if (a) lastArt = a;
+      const ubi = clean(pickP(r, ['codiubic_1','ubicazione','codubicazione']));
+      const qty = parseNum(pickP(r, ['esisattu_ubi','cantitate','qta','quantit','qty','giacenza','pezzi','pz','bucati']));
+      if (!lastArt || !ubi || !(qty > 0)) continue;
+      const um = clean(pickP(r, ['arunmis1','arunmis','um']));
+      const k = lastArt + '\u0001' + ubi;
       const o = agg.get(k);
-      if (o) o.qty += qty; else agg.set(k, {art, ubi: lastUbi, qty, um});
+      if (o) o.qty += qty; else agg.set(k, {art: lastArt, ubi, qty, um});
     }
     const rows = [...agg.values()];
+
     if (!rows.length) throw new Error('Nessuna riga valida trovata (colonne: CACODAR2, CODIUBIC, ESISATTU).');
     if (!confirm(`Caricare "${f.name}" (${rows.length} righe)?\nLa giacenza attuale verrà sostituita per tutti.`)) return;
     batch = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
