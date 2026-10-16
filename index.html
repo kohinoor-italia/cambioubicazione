@@ -799,7 +799,8 @@ async function confirmCaps(ok){
 
 
 /* ================= GIACENZA ================= */
-const UBI_OK = /^[A-Z]\.\d{2}\.\d{2}\.\d{2}$/;   // doar ubicazioni normale (exclude RESI, VIRTUALE, STIVA 01 etc.)
+const UBI_OK = /^([A-Z]\.\d{2}\.\d{2}\.\d{2}|STIVA 01|RESI)$/i;   // ubicazioni normale + STIVA 01 + RESI
+
 
 async function loadStock(){
   const out = [], step = 1000;
