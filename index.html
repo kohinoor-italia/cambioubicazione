@@ -499,8 +499,10 @@ function computeTasks(catalog, stock, capFallback){
     tasks.push({
       id: art + '|' + moves.map(m => m.ubi + ':' + m.qty).join(',') + '>' + c.ubi,
       art, desc: c.desc || '', dest: c.ubi, cap, casellaQty,
-      moves, total: p.total, freed: p.n, after: casellaQty + p.total
+      moves, total: p.total, freed: p.n, after: casellaQty + p.total,
+      destOthers: [...(byLoc.get(c.ubi) || [])].filter(a => a !== art).sort()   // alți articoli din casela de destinație
     });
+
   }
   tasks.sort((a,b) => b.freed - a.freed || b.total - a.total || a.art.localeCompare(b.art));
   return {tasks, noCatalog, noCap, full, noFit};
@@ -1082,9 +1084,11 @@ const res = computeTasks(catalog, S.stock.filter(r => UBI_OK.test(r.ubi)), S.dem
     const s = st(t), key = esc(t.id);
     return `<details class="task ${s === 'todo' ? '' : s}" data-id="${key}" ${S.open.has(t.id) ? 'open' : ''}>
       <summary>
-        <div><span class="dest">${esc(t.dest)}</span> <span class="art">${esc(t.art)}</span></div>
-        <div class="desc">${esc(t.desc)}</div>
+        <div><span class="dest">${esc(t.dest)}</span>${t.destOthers.length ? '<span title="Casella con altri articoli: tieni separato" style="color:var(--bad);font-weight:700;font-size:20px;margin:0 4px">⚠</span>' : ''}</div>
+        <div class="desc"><span class="art" style="color:var(--ink)">${esc(t.art)}</span>${t.desc ? ' · ' + esc(t.desc) : ''}</div>
+
         <div class="chips"><span class="chip">${fmt(t.total)} pz</span><span class="chip free">${t.freed === 0 ? 'prelievo parziale' : t.freed + ' ' + (t.freed === 1 ? 'posizione liberata' : 'posizioni liberate')}</span></div>
+
       </summary>
       <div class="steps">
         ${t.moves.map(m => `<div class="step"><span class="loc">${esc(m.ubi)}</span>
@@ -1092,6 +1096,8 @@ const res = computeTasks(catalog, S.stock.filter(r => UBI_OK.test(r.ubi)), S.dem
           ${m.shared ? '<span class="tag warn">contiene altri articoli</span>' : ''}</span></div>`).join('')}
         <div class="step"><span class="loc">${esc(t.dest)}</span>
           <span class="act">Deposito nella casella. Giacenza casella: ${fmt(t.casellaQty)} → <b>${fmt(t.after)}</b> / ${fmt(t.cap)} pz</span></div>
+
+
         <div class="acts">
           <button class="btn ok" data-act="done">Completata</button>
           <button class="btn bad" data-act="problem">Articolo mancante / problema</button>
@@ -1257,15 +1263,32 @@ function makePdf(){
     const top = y;
     doc.setDrawColor(120); doc.setLineWidth(.3); doc.rect(M, top, W - 2 * M, h);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110); doc.text(String(i + 1), M + 2, top + 5); doc.setTextColor(0);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(t.dest, M + 9, top + 7);
-    const dw = doc.getTextWidth(t.dest);
-    doc.setFontSize(11); doc.text(t.art, M + 9 + dw + 4, top + 7);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(t.art, M + 9, top + 7);
+    const aw = doc.getTextWidth(t.art);
+    doc.setFontSize(12);
+    const dx = M + 9 + aw + 5;
+    doc.text(t.dest, dx, top + 7);
+    if (t.destOthers.length){
+      const s = 3.9, ix = dx + doc.getTextWidth(t.dest) + 2.5, iy = top + 7;   // iy = linia de bază a textului
+      const cx = ix + s / 2, ty = iy - 3.2;                                   // vârful la înălțimea majusculelor
+      doc.setFillColor(179, 38, 30); doc.setDrawColor(179, 38, 30); doc.setLineWidth(.6); doc.setLineJoin('round');
+      doc.triangle(cx, ty + .3, ix + .3, iy - .3, ix + s - .3, iy - .3, 'FD');
+      doc.setFillColor(255); doc.setDrawColor(255);
+      doc.setLineWidth(.35); doc.setLineCap('round');
+      doc.line(cx, ty + 1.4, cx, iy - 1.5);                                   // bara
+      doc.circle(cx, iy - .75, .22, 'F');                                     // punctul
+      doc.setLineWidth(.3); doc.setLineCap('butt'); doc.setLineJoin('miter');
+      doc.setDrawColor(0); doc.setFillColor(0); doc.setTextColor(0);
+    }
+
+
+
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(90);
     doc.text(String(doc.splitTextToSize(t.desc || '', W - 2 * M - 62)[0] || ''), M + 9, top + 12);
     doc.setTextColor(0); doc.setFont('helvetica', 'bold'); doc.setFontSize(12);
     doc.text(`${t.total} pz`, W - M - 3, top + 6.5, {align: 'right'});
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
-doc.text(t.freed === 0 ? 'prelievo parziale' : `${t.freed} ${t.freed === 1 ? 'posizione liberata' : 'posizioni liberate'}`, W - M - 3, top + 11.5, {align: 'right'});
+    doc.text(t.freed === 0 ? 'prelievo parziale' : `${t.freed} ${t.freed === 1 ? 'posizione liberata' : 'posizioni liberate'}`, W - M - 3, top + 11.5, {align: 'right'});
 
     let ry = top + 14; doc.setDrawColor(190); doc.line(M, ry, W - M, ry); doc.setDrawColor(0);
     t.moves.forEach(m => {
@@ -1275,12 +1298,14 @@ doc.text(t.freed === 0 ? 'prelievo parziale' : `${t.freed} ${t.freed === 1 ? 'po
     ry += 7; doc.rect(M + 3, ry - 5, 4, 4);
     parts(M + 10, ry - 1.7, [['Depositare in casella ', false], [t.dest, true]], 11);
     ry += 6;
+
     parts(M + 10, ry - 1.7, [
       ['Già in casella: ', false], [`${t.casellaQty} pz${t.casellaQty ? '' : ' (vuota)'}`, true],
       ['    Da aggiungere: ', false], [`+${t.total} pz`, true],
       ['    Totale: ', false], [`${t.after} / ${t.cap} pz`, true]], 10);
     y = top + h + 4;
   });
+
 
   if (done.length || prob.length){
     if (list.length) doc.addPage();
