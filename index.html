@@ -272,7 +272,35 @@ td input.missing{border-color:var(--hazard)}
 
 
 
+/* ===== SCAN verdict ===== */
+.scan-toast{position:fixed;left:50%;top:50%;transform:translate(-50%,-46%) scale(.94);z-index:200;width:min(340px,92vw);background:#fff;border-radius:16px;border-top:6px solid var(--c);padding:12px;box-shadow:0 18px 50px rgba(28,34,38,.4),0 0 0 100vmax rgba(10,14,17,.6);opacity:0;pointer-events:none;transition:opacity .15s,transform .15s;--c:var(--bad);--cb:var(--badbg)}
+.scan-toast.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+.scan-toast.ok{--c:var(--ok);--cb:var(--okbg)}
+.scan-toast.warn{--c:#b07d00;--cb:#fff4cc;border-top-color:var(--hazard)}
+.sc-top{display:flex;align-items:center;gap:10px}
+.sc-ic{flex:none;width:42px;height:42px;border-radius:12px;background:var(--cb);color:var(--c);display:flex;align-items:center;justify-content:center}
+.sc-ic svg{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round}
+.sc-hd{min-width:0}
+.sc-t{font:700 18px/1.1 var(--fh);letter-spacing:.03em;text-transform:uppercase;color:var(--c)}
+.sc-s{font-size:12.5px;color:var(--mute);margin-top:2px;line-height:1.25}
+.sc-art{margin-top:10px;padding:6px 10px;background:var(--bg);border-radius:8px;font-size:13px;line-height:1.25}
+.sc-art b{display:block;font-size:15px}
+.sc-art span{color:var(--mute)}
+.sc-mv{margin-top:8px}
+.sc-r{display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px dashed var(--line)}
+.sc-loc{flex:1;font:700 17px var(--fh);letter-spacing:.04em}
+.sc-q{font-weight:600;font-size:14px}
+.sc-tg{font-size:11px;font-weight:700;border-radius:5px;padding:1px 7px;background:var(--hazard)}
+.sc-tg.p{background:var(--badbg);color:var(--bad)}
+.sc-dest{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:13px}
+.sc-dest svg{flex:none;width:16px;height:16px;fill:none;stroke:var(--ok);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.sc-dest b{font:700 19px var(--fh);letter-spacing:.04em}
+.sc-dest span{margin-left:auto;color:var(--mute)}
+.sc-bar{height:6px;background:var(--bg);border-radius:3px;margin-top:5px;overflow:hidden}
+.sc-bar i{display:block;height:100%;background:var(--ok);border-radius:3px}
+
 </style>
+
 </head>
 <body>
 <header>
@@ -1056,6 +1084,8 @@ function renderStock(){
 function renderTasks(){
   const catalog = catMap();
 const res = computeTasks(catalog, S.stock.filter(r => UBI_OK.test(r.ubi)), S.demo ? S.demoCap : null);
+  S.lastRes = res;
+
 
   let list = res.tasks;
   const st = t => S.status[t.id] || 'todo';
@@ -1366,7 +1396,142 @@ function tickClock(){
 }
 tickClock(); setInterval(tickClock, 1000);
 
+/* ================= SCAN: verdict Abbassamento ================= */
+let EANMAP = {}, EANDESC = {};
+function applyEanPairs(pairs){
+  EANMAP = {}; EANDESC = {};
+  pairs.forEach(p => { EANMAP[p[0]] = p[1]; if (p[2] && !EANDESC[p[1]]) EANDESC[p[1]] = p[2]; });
+}
+async function loadEanFull(){
+  const out = [], step = 1000;
+  for (let from = 0; ; from += step){
+    const res = await sb('ean?select=codice,codice_articolo,descrizione,uploaded_at&order=codice', {headers: {Range: `${from}-${from + step - 1}`, 'Range-Unit': 'items'}});
+    const part = await res.json();
+    out.push(...part);
+    if (part.length < step) break;
+  }
+  const pairs = out.map(x => [String(x.codice), String(x.codice_articolo).trim(), x.descrizione || '']);
+  const date = out.reduce((m, x) => x.uploaded_at && x.uploaded_at > m ? x.uploaded_at : m, '');
+  return {pairs, date};
+}
+async function loadEan(){
+  const KEY = 'ean_cache_v2';
+  let c = null;
+  try { c = JSON.parse(localStorage.getItem(KEY)); } catch(e){}
+  try {
+    const r = await (await sb('ean?select=uploaded_at&order=uploaded_at.desc&limit=1')).json();
+    const remote = r.length ? r[0].uploaded_at : null;
+    if (c && c.pairs && remote && c.date === remote){ applyEanPairs(c.pairs); return; }
+    const f = await loadEanFull();
+    applyEanPairs(f.pairs);
+    try { localStorage.setItem(KEY, JSON.stringify({date: f.date, pairs: f.pairs})); } catch(e){}
+  } catch(e){
+    if (c && c.pairs) applyEanPairs(c.pairs);
+  }
+}
+
+let scanEl = null, scanTimer = null, scanAc = null;
+function scanBeep(ok){
+  try {
+    scanAc = scanAc || new (window.AudioContext || window.webkitAudioContext)();
+    if (scanAc.state === 'suspended') scanAc.resume();
+    const o = scanAc.createOscillator(), g = scanAc.createGain();
+    o.type = ok ? 'sine' : 'square'; o.frequency.value = ok ? 880 : 220; g.gain.value = .15;
+    o.connect(g); g.connect(scanAc.destination); o.start(); o.stop(scanAc.currentTime + (ok ? .15 : .4));
+  } catch(e){}
+  if (navigator.vibrate) navigator.vibrate(ok ? 80 : [250, 100, 250]);
+}
+function scanToast(kind, title, sub, code, extra){
+  if (!scanEl){
+    scanEl = document.createElement('div');
+    scanEl.onclick = () => scanEl.classList.remove('on');
+    document.body.appendChild(scanEl);
+    document.addEventListener('click', () => scanEl.classList.remove('on'));
+
+  }
+  const ICO = {
+    ok: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>',
+    err: '<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>',
+    warn: '<path d="M12 3L2 21h20L12 3z"/><path d="M12 10v5M12 18h.01"/>'
+  };
+  const ci = code ? String(code).indexOf(' · ') : -1;
+  const c1 = ci < 0 ? code : code.slice(0, ci), c2 = ci < 0 ? '' : code.slice(ci + 3);
+  scanEl.className = 'scan-toast ' + kind;
+  scanEl.innerHTML =
+    `<div class="sc-top"><div class="sc-ic"><svg viewBox="0 0 24 24">${ICO[kind]}</svg></div>` +
+    `<div class="sc-hd"><div class="sc-t">${esc(title)}</div><div class="sc-s">${esc(sub)}</div></div></div>` +
+    (code ? `<div class="sc-art"><b>${esc(c1)}</b>${c2 ? `<span>${esc(c2)}</span>` : ''}</div>` : '') +
+    (extra || '');
+
+  void scanEl.offsetWidth;
+  scanEl.classList.add('on');
+  clearTimeout(scanTimer);
+
+  scanBeep(kind === 'ok');
+}
+function scanCheck(raw){
+  const code = String(raw).trim();
+  if (!code) return;
+  let art = EANMAP[code] || EANMAP[code.toUpperCase()] || EANMAP[code.toLowerCase()] || null;
+
+  if (!art){
+    const lc = code.toLowerCase();
+    const hit = S.catalog.find(r => r.articolo && r.articolo.toLowerCase() === lc) || S.stock.find(r => r.art.toLowerCase() === lc);
+    art = hit ? (hit.articolo || hit.art) : null;
+  }
+  if (!art) return scanToast('err', 'Articolo sconosciuto', 'Codice assente dal database EAN e dal catalogo', code);
+  const desc = EANDESC[art] || (S.catalog.find(r => r.articolo === art) || {}).descrizione || '';
+  const label = art + (desc ? ' · ' + desc : '');
+  if (!S.stock.length) return scanToast('warn', 'Giacenza non caricata', 'Carica la giacenza per poter verificare', label);
+  const R = S.lastRes;
+  const t = R && R.tasks.find(x => x.art === art);
+  if (t){
+    const st = S.status[t.id];
+    const extra = '<div class="sc-mv">' +
+      t.moves.map(m => `<div class="sc-r"><span class="sc-loc">${esc(m.ubi)}</span><span class="sc-q">${fmt(m.qty)} pz</span><span class="sc-tg${m.partial ? ' p' : ''}">${m.partial ? 'parziale' : 'svuota'}</span></div>`).join('') +
+      `<div class="sc-dest"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg><b>${esc(t.dest)}</b><span>${fmt(t.casellaQty)} → ${fmt(t.after)} / ${fmt(t.cap)} pz</span></div>` +
+      `<div class="sc-bar"><i style="width:${Math.min(100, Math.round(t.after / t.cap * 100))}%"></i></div></div>`;
+
+    return scanToast('ok',
+      'SÌ, Abbassamento possibile' + (st === 'done' ? ' (già completata)' : st === 'problem' ? ' (segnata come problema)' : ''),
+      t.freed ? `${t.freed} ${t.freed === 1 ? 'posizione liberata' : 'posizioni liberate'} · ${fmt(t.total)} pz` : `prelievo parziale · ${fmt(t.total)} pz`,
+      label, extra);
+  }
+  const why = R && (
+    R.noCap.includes(art) ? 'Manca la capacità massima della casella (Catalogo)' :
+    R.noCatalog.includes(art) ? 'Articolo senza casella di picking' :
+    R.full.includes(art) ? 'Casella già piena, nulla da spostare' :
+    R.noFit.includes(art) ? 'Nessuna scorta entra per intero nella casella' : null);
+  if (why) return scanToast('err', 'NO, Abbassamento non possibile', why, label);
+  if (S.stock.some(r => r.art === art && r.qty > 0))
+    return scanToast('err', 'NO, Abbassamento non possibile', 'Nessuna scorta fuori casella: tutto è già nella casella', label);
+  return scanToast('err', 'NO, Abbassamento non possibile', 'Articolo non presente in giacenza', label);
+}
+
+/* scanner (tastiera): strânge caracterele și la Enter dă verdictul */
+let scanBuf = '', scanBufT = null;
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+  if (e.key === 'Enter'){
+    if (scanBuf.length >= 3){ e.preventDefault(); const c = scanBuf; scanBuf = ''; clearTimeout(scanBufT); scanCheck(c); }
+    scanBuf = ''; return;
+  }
+  if (e.key.length !== 1) return;
+  scanBuf += e.key;
+  clearTimeout(scanBufT);
+  scanBufT = setTimeout(() => { scanBuf = ''; }, 400);
+}, true);
+/* dacă EAN-ul e scris/scanat în câmpul de căutare Attività, Enter dă verdictul */
+$('tasksSearch').addEventListener('keydown', e => {
+  const v = e.target.value.trim();
+  if (e.key === 'Enter' && v.length >= 3 && (/^\d{8,14}$/.test(v) || EANMAP[v] || S.catalog.some(r => r.articolo && r.articolo.toLowerCase() === v.toLowerCase()))){ e.preventDefault(); scanCheck(v); e.target.select(); }
+});
+loadEan();
+
 /* ================= HEARTBEAT SUPABASE ================= */
+
 const HB_MS = 6000;
 let hbTimer = null, hbFails = 0;
 function setConn(ok){
