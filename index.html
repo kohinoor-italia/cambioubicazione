@@ -144,6 +144,16 @@ td input.missing{border-color:var(--hazard)}
 .sbar{display:flex;gap:6px}
 .sbar .btn{flex:1;min-height:38px;padding:6px 10px;text-align:center;display:flex;align-items:center;justify-content:center}
 #stockInfo .msg{padding:5px 10px;font-size:12.5px;margin:0}
+.sfile{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:10px;min-width:0}
+.sfile.demo{border-left-color:var(--hazard);background:#fff6d6}
+.sf-ic{flex:none;width:34px;height:34px;border-radius:9px;background:var(--okbg);color:var(--ok);display:flex;align-items:center;justify-content:center}
+.sfile.demo .sf-ic{background:var(--hazard);color:var(--ink)}
+.sf-ic svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.sf-tx{min-width:0;flex:1}
+.sf-tx b{display:block;font-size:14px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sf-tx span{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:3px}
+.sf-tx i{font-style:normal;font-size:11.5px;font-weight:600;color:var(--mute);background:#fff;border:1px solid var(--line);border-radius:999px;padding:0 8px;line-height:18px}
+
 #stockInfo p{margin:0;font-size:12.5px}
 .tbar{display:flex;gap:6px;margin-bottom:8px}
 .tbar input[type=search]{flex:1;min-width:0;min-height:38px;padding:6px 10px}
@@ -361,7 +371,7 @@ td input.missing{border-color:var(--hazard)}
   <section class="panel hide" id="tab-stock">
     <div class="box">
       <h2>Giacenza attuale</h2>
-      <p class="muted" style="margin:0 0 8px;font-size:12px">Export ERP per articolo · colonne: CACODAR2, ESISATTU, CODIUBIC_1, ESISATTU_UBI</p>
+
       <details style="margin:0 0 10px;font-size:13px">
         <summary style="cursor:pointer;font-weight:600">Come caricare la giacenza</summary>
         <ol style="margin:6px 0 0;padding-left:20px;line-height:1.5">
@@ -376,8 +386,7 @@ td input.missing{border-color:var(--hazard)}
 
       <div class="sbar">
         <label class="btn pri">Carica<input type="file" id="stockFile" accept=".xlsx,.xls,.csv" hidden></label>
-        <button class="btn" id="btnDemo">Demo</button>
-        <button class="btn bad" id="btnClearStock">Elimina</button>
+
       </div>
       <div id="stockInfo" style="margin-top:6px"></div>
     </div>
@@ -1073,8 +1082,10 @@ function renderCatalog(){
 
 
 function renderStock(){
+  const sd = S.stockTime ? new Date(S.stockTime) : null;
+  const sdTxt = sd ? sd.toLocaleDateString('it-IT', {day:'2-digit', month:'2-digit'}) + ' · ' + sd.toLocaleTimeString('it-IT', {hour:'2-digit', minute:'2-digit'}) : '—';
   $('stockInfo').innerHTML = S.stock.length
-    ? `<div class="msg ${S.demo ? 'demo' : 'info'}">${esc(S.stockName)} · ${fmt(S.stock.length)} righe · ${S.stockTime ? new Date(S.stockTime).toLocaleString('it-IT', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : '—'}</div>`
+    ? `<div class="sfile${S.demo ? ' demo' : ''}"><div class="sf-ic"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8l-5-5z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></div><div class="sf-tx"><b>${esc(S.stockName)}</b><span><i>${fmt(S.stock.length)} righe</i><i>${sdTxt}</i></span></div></div>`
     : '<p class="muted">Nessuna giacenza caricata.</p>';
   const term = $('stockSearch').value.trim().toLowerCase();
   let rows = S.stock; if (term) rows = rows.filter(r => (r.art + ' ' + r.ubi).toLowerCase().includes(term));
@@ -1236,15 +1247,8 @@ $('catTable').addEventListener('change', e => {
 });
 $('catFile').onchange = onCatFile;
 $('stockFile').onchange = onStockFile;
-$('btnDemo').onclick = genDemo;
-$('btnClearStock').onclick = async () => {
-  if (!S.stock.length || !confirm(S.demo ? 'Eliminare i dati demo?' : 'Eliminare la giacenza caricata (per tutti gli utenti)?')) return;
-  try {
-    if (S.demo){ await loadStock(); }
-    else { await sb(`${STOCK_TABLE}?id=gt.0`, {method: 'DELETE'}); S.stock = []; S.stockName = ''; S.stockTime = null; S.status = {}; }
-    banner(''); renderAll();
-  } catch(err){ banner('Errore: ' + esc(err.message), 'err'); }
-};
+
+
 
 $('btnCatDownload').onclick = downloadCatalog;
 $('btnPdf').onclick = makePdf;
