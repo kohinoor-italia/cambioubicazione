@@ -625,15 +625,19 @@ async function onCatFile(e){
     const raw = await readSheet(f);
     const rows = [];
     for (const r of raw){
-      const ubi = clean(pick(r, ['codubicazione','ubicazione','ubicazioni']));
+const ubi = clean(pick(r, ['codubicazione','ubicazione','ubicazioni','ubcodice']));
+
       if (!ubi) continue;
       const capRaw = pick(r, ['capacitate','capacitatemax','capmax','capacitatemaxpicking','capacitatemaxcasela']);
       const cap = capRaw === undefined || capRaw === '' ? null : parseNum(capRaw);
       rows.push({
-        cod_magazzino: clean(pick(r, ['codmagazzino','magazzino','mag'])),
+cod_magazzino: clean(pick(r, ['codmagazzino','magazzino','mag','ubcodmag'])),
+
         ubicazione: ubi,
-        articolo: clean(pick(r, ['articolo','codarticol','cod'])),
-        descrizione: clean(pick(r, ['descrizione','denumire','descriere'])),
+articolo: clean(pick(r, ['articolo','codarticol','cod','arcodar'])),
+
+descrizione: clean(pick(r, ['descrizione','denumire','descriere','ardesart'])),
+
 capFile: cap > 0 ? Math.round(cap) : null,
         boxFile: (n => n > 0 ? Math.round(n) : null)(parseNum(pick(r, ['scatola','pzscatola','pzperscatola','cutie','pzcutie','pzpercutie','boxsize']) ?? ''))
 
