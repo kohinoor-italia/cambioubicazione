@@ -132,10 +132,19 @@ td input.missing{border-color:var(--hazard)}
 .seg button .bdg.ok{background:var(--ok)}
 .seg button .bdg.bad{background:var(--bad)}
 
-.lockbox{max-width:320px;margin:30px auto;text-align:center}
-.lockbox h2{margin:0 0 4px;font:700 22px var(--fh)}
-.lockbox input{width:100%;text-align:center;letter-spacing:.2em;margin:10px 0 6px}
-.lockbox .err{color:var(--bad);font-size:14px;min-height:20px}
+.lockbox{position:relative;max-width:340px;margin:36px auto;padding:30px 22px 22px;text-align:center;background:#fff;border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 14px 40px rgba(28,34,38,.14)}
+.lockbox::before{content:"";position:absolute;left:0;right:0;top:0;height:8px;background:repeating-linear-gradient(-45deg,var(--hazard) 0 12px,var(--ink) 12px 24px)}
+.lk-ic{width:68px;height:68px;margin:0 auto 14px;border-radius:20px;background:linear-gradient(135deg,var(--hazard),#ffd75a);color:var(--ink);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(245,183,0,.4)}
+.lk-ic svg{width:34px;height:34px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.lockbox h2{margin:0 0 4px;font:700 26px var(--fh);letter-spacing:.05em;text-transform:uppercase}
+.lk-sub{color:var(--mute);font-size:14px}
+.lockbox input{width:100%;text-align:center;letter-spacing:.35em;font:600 20px var(--fb);margin:18px 0 6px;min-height:52px;border:2px solid var(--line);border-radius:12px;background:var(--bg);transition:border-color .15s,box-shadow .15s,background .15s}
+.lockbox input:focus{outline:0;background:#fff;border-color:var(--ink);box-shadow:0 0 0 4px rgba(245,183,0,.35)}
+.lockbox input::placeholder{letter-spacing:.2em;color:#9aa6ac}
+.lockbox .err{color:var(--bad);font-size:14px;font-weight:600;min-height:22px}
+.lockbox .btn{width:100%;min-height:50px;border-radius:12px;font:700 19px var(--fh);letter-spacing:.06em;text-transform:uppercase;box-shadow:0 4px 0 var(--ink);transition:transform .08s,box-shadow .08s}
+.lockbox .btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+
 #tab-catalog .muted{font-size:12px;max-width:640px;margin:6px 0 10px}
 #catInfo p{font-size:13px;color:var(--mute);margin:0 0 4px!important}
 
@@ -359,12 +368,14 @@ td input.missing{border-color:var(--hazard)}
   <!-- BLOCCO -->
   <section class="panel hide" id="tab-lock">
     <div class="lockbox">
-      <h2>🔒 Area protetta</h2>
-      <div class="muted">Inserisci il codice per accedere</div>
-      <input type="password" id="lockPw" inputmode="text" autocomplete="off" placeholder="Codice">
+      <div class="lk-ic"><svg viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/><path d="M12 15v2.2"/></svg></div>
+      <h2>Area protetta</h2>
+      <div class="lk-sub">Inserisci il codice per accedere</div>
+      <input type="password" id="lockPw" inputmode="text" autocomplete="off" placeholder="• • • •">
       <div class="err" id="lockErr"></div>
-      <button class="btn pri" id="lockBtn" style="width:100%">Sblocca</button>
+      <button class="btn pri" id="lockBtn">Sblocca</button>
     </div>
+
   </section>
 
   <!-- GIACENZA -->
