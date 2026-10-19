@@ -317,6 +317,9 @@ td input.missing{border-color:var(--hazard)}
 .sc-dest span{margin-left:auto;color:var(--mute)}
 .sc-bar{height:6px;background:var(--bg);border-radius:3px;margin-top:5px;overflow:hidden}
 .sc-bar i{display:block;height:100%;background:var(--ok);border-radius:3px}
+.sc-acts{display:flex;gap:8px;margin-top:10px}
+.sc-acts .btn{flex:1;min-width:0;min-height:44px;padding:6px 8px}
+
 
 </style>
 
@@ -1501,11 +1504,14 @@ function scanCheck(raw){
   const R = S.lastRes;
   const t = R && R.tasks.find(x => x.art === art);
   if (t){
-    const st = S.status[t.id];
+    const st = S.status[t.id]; S.scanTask = t;
+
     const extra = '<div class="sc-mv">' +
       t.moves.map(m => `<div class="sc-r"><span class="sc-loc">${esc(m.ubi)}</span><span class="sc-q">${fmt(m.qty)} pz</span><span class="sc-tg${m.partial ? ' p' : ''}">${m.partial ? 'parziale' : 'svuota'}</span></div>`).join('') +
       `<div class="sc-dest"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg><b>${esc(t.dest)}</b><span>${fmt(t.casellaQty)} → ${fmt(t.after)} / ${fmt(t.cap)} pz</span></div>` +
-      `<div class="sc-bar"><i style="width:${Math.min(100, Math.round(t.after / t.cap * 100))}%"></i></div></div>`;
+      `<div class="sc-bar"><i style="width:${Math.min(100, Math.round(t.after / t.cap * 100))}%"></i></div>` +
+      `<div class="sc-acts"><button class="btn ok" onclick="scanAct('done')">Completata</button><button class="btn bad" onclick="scanAct('problem')">Problema</button></div></div>`;
+
 
     return scanToast('ok',
       'SÌ, Abbassamento possibile' + (st === 'done' ? ' (già completata)' : st === 'problem' ? ' (segnata come problema)' : ''),
@@ -1521,6 +1527,21 @@ function scanCheck(raw){
   if (S.stock.some(r => r.art === art && r.qty > 0))
     return scanToast('err', 'NO, Abbassamento non possibile', 'Nessuna scorta fuori casella: tutto è già nella casella', label);
   return scanToast('err', 'NO, Abbassamento non possibile', 'Articolo non presente in giacenza', label);
+}
+
+async function scanAct(act){
+  const t = S.scanTask; if (!t) return;
+  const tid = t.id, prev = S.status[tid];
+  S.status[tid] = act; S.open.delete(tid); S.stVer++;
+  renderTasks();
+  S.busy = true;
+  try { await setStatus(tid, act); }
+  catch(err){
+    if (prev === undefined) delete S.status[tid]; else S.status[tid] = prev;
+    renderTasks();
+    banner('Impossibile salvare lo stato: ' + esc(err.message), 'err');
+  }
+  S.busy = false;
 }
 
 /* scanner (tastiera): strânge caracterele și la Enter dă verdictul */
