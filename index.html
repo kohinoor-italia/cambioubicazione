@@ -459,6 +459,42 @@ const ST_ART = '__STATUS__';
 
 const SB_HEADERS = {apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`};
 
+/* ===== CACHE (IndexedDB) + semnături ieftine ===== */
+const CAT_SIG   = `${TABLE}?select=uploaded_at&order=uploaded_at.desc&limit=1`;
+const STOCK_SIG = `${STOCK_TABLE}?select=uploaded_at&articolo=neq.${ST_ART}&order=uploaded_at.desc&limit=1`;
+const ST_SIG    = `${STOCK_TABLE}?select=id&articolo=eq.${ST_ART}&order=id.desc&limit=1`;
+const CAT_TTL   = 15 * 60 * 1000;
+
+const IDB = {
+  db: null,
+  open(){ return this.db || (this.db = new Promise((res, rej) => {
+    const r = indexedDB.open('abb_cache', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  })); },
+  async get(k){
+    try { const db = await this.open();
+      return await new Promise(res => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); });
+    } catch(e){ return null; }
+  },
+  async set(k, v){
+    try { const db = await this.open();
+      await new Promise(res => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = t.onerror = t.onabort = () => res(); });
+    } catch(e){}
+  }
+};
+async function sigOf(path){
+  const res = await sb(path, {headers: {Prefer: 'count=exact'}});
+  const rows = await res.json();
+  const total = (res.headers.get('content-range') || '').split('/')[1] || '';
+  return (rows[0] ? String(Object.values(rows[0])[0]) : '') + '|' + total;
+}
+function persistCat(){
+  if (S.catMeta && S.catMeta.sig) IDB.set('catalog', {rows: S.catalog, sig: S.catMeta.sig, t: S.catMeta.t, noCap: S.noCapCol, noBox: S.noBoxCol});
+}
+
+
 /* ================= ALGORITM (pur, testabil) ================= */
 /*ALGO-START*/
 // Sceglie il sottoinsieme di scorte che sta entro "rem" pezzi.
@@ -628,7 +664,15 @@ async function fetchAll(select){
   }
   return out;
 }
-async function loadCatalog(){
+async function loadCatalog(force){
+  let sig = null; try { sig = await sigOf(CAT_SIG); } catch(e){}
+  const c = await IDB.get('catalog');
+  const fresh = sig !== null && c && sig === c.sig && Date.now() - c.t < CAT_TTL;
+  if (!force && c && c.rows && (fresh || sig === null)){
+    S.catalog = c.rows; S.noCapCol = c.noCap; S.noBoxCol = c.noBox;
+    S.catMeta = {sig: c.sig, t: c.t}; S.loadedOnce = true;
+    return;
+  }
   const base = 'id,cod_magazzino,ubicazione,articolo,descrizione,batch_id,uploaded_at';
   try {
     S.catalog = await fetchAll(base + ',cap_max,cap_box');
@@ -645,7 +689,10 @@ async function loadCatalog(){
     }
   }
   S.loadedOnce = true;
+  S.catMeta = {sig, t: Date.now()};
+  persistCat();
 }
+
 
 
 /* ================= EXCEL ================= */
@@ -742,7 +789,8 @@ if (!S.noCapCol) o.cap_max = r.cap_max;
     // solo dopo l'inserimento completo dei nuovi dati, cancelliamo tutto ciò che non appartiene al nuovo lotto
     await sb(`${TABLE}?or=(batch_id.is.null,batch_id.neq.${encodeURIComponent(batch)})`, {method: 'DELETE'});
     S.pendingCat = null;
-    await loadCatalog();
+    await loadCatalog(true);
+
     $('catPreview').innerHTML = `<div class="msg ok">Catalogo aggiornato: ${fmt(payload.length)} righe.</div>`;
     renderAll();
   } catch(err){
@@ -770,7 +818,9 @@ async function saveCap(art, val){
     const res = await sb(`${TABLE}?articolo=eq.${encodeURIComponent(art)}&select=id`, {method: 'PATCH', headers: {Prefer: 'return=representation'}, body: JSON.stringify({cap_max: n})});
     const done = await res.json();
     if (!done.length) throw new Error('0 righe aggiornate. Controlla la policy UPDATE su Supabase (esegui setup_articoli.sql)');
+    persistCat();
   } catch(err){
+
     apply(prev); if (prevDemo !== undefined) S.demoCap[art] = prevDemo;
     renderCatalog(); renderCatalogInfo(); renderTasks();
     banner('Impossibile salvare la capacità (ripristinato il valore precedente): ' + esc(err.message), 'err');
@@ -788,7 +838,9 @@ async function saveBox(art, val){
     const res = await sb(`${TABLE}?articolo=eq.${encodeURIComponent(art)}&select=id`, {method: 'PATCH', headers: {Prefer: 'return=representation'}, body: JSON.stringify({cap_box: n})});
     const done = await res.json();
     if (!done.length) throw new Error('0 righe aggiornate. Controlla la colonna cap_box e la policy UPDATE su Supabase');
+    persistCat();
   } catch(err){
+
     apply(prev); renderCatalog(); renderTasks();
     banner('Impossibile salvare i pezzi per scatola (ripristinato): ' + esc(err.message), 'err');
   }
@@ -849,7 +901,7 @@ async function confirmCaps(ok){
     await run('cap_max', ok.filter(([a, v]) => v.cap).map(([a, v]) => [a, v.cap]));
     if (!S.noBoxCol) await run('cap_box', ok.filter(([a, v]) => v.box).map(([a, v]) => [a, v.box]));
     if (!ids.size) throw new Error('0 righe aggiornate. Controlla la policy UPDATE su Supabase.');
-    await loadCatalog(); renderAll();
+    await loadCatalog(true); renderAll();
     $('catPreview').innerHTML = `<div class="msg ok">Importazione completata su ${fmt(ok.length)} articoli (${fmt(ids.size)} righe aggiornate).</div>`;
   } catch(err){ $('catPreview').innerHTML = `<div class="msg err">Errore: ${esc(err.message)}</div>`; }
 }
@@ -860,10 +912,16 @@ const UBI_OK = /^([A-Z]\.\d{2}\.\d{2}\.\d{2}|STIVA 01|RESI)$/i;   // ubicazioni 
 
 
 async function loadStock(){
+  let sig = null; try { sig = await sigOf(STOCK_SIG); } catch(e){}
+  const c = await IDB.get('stock');
+  if (c && c.rows && (sig === null || sig === c.sig)){
+    S.stock = c.rows; S.stockName = c.name; S.stockTime = c.time;
+    S.demo = false; S.demoCap = {};
+    return;
+  }
   const out = [], step = 1000;
   for (let from = 0; ; from += step){
     const res = await sb(`${STOCK_TABLE}?select=articolo,ubicazione,cantitate,um,fisier,uploaded_at&articolo=neq.${ST_ART}&order=id`, {headers: {Range: `${from}-${from + step - 1}`, 'Range-Unit': 'items'}});
-
     const part = await res.json();
     out.push(...part);
     if (part.length < step) break;
@@ -872,7 +930,9 @@ async function loadStock(){
   S.stockName = out.length ? (out[0].fisier || '') : '';
   S.stockTime = out.length ? out.reduce((m, r) => r.uploaded_at > m ? r.uploaded_at : m, '') : null;
   S.demo = false; S.demoCap = {};
+  if (sig !== null) IDB.set('stock', {rows: S.stock, name: S.stockName, time: S.stockTime, sig});
 }
+
 function setStock(rows, name, demo, time){
   S.stock = rows; S.stockName = name; S.stockTime = time || new Date().toISOString(); S.demo = !!demo;
   if (!demo) S.demoCap = {};
@@ -1269,7 +1329,7 @@ $('btnPdf').onclick = makePdf;
 
 $('btnCapExport').onclick = exportCaps;
 $('capFile').onchange = onCapFile;
-$('btnCatReload').onclick = async () => { try { await loadCatalog(); renderAll(); banner(''); } catch(e){ banner('Errore: ' + esc(e.message), 'err'); } };
+$('btnCatReload').onclick = async () => { try { await loadCatalog(true); renderAll(); banner(''); } catch(e){ banner('Errore: ' + esc(e.message), 'err'); } };
 
 /*PDF-START*/
 /* ================= PDF ATTIVITÀ ================= */
@@ -1582,10 +1642,17 @@ async function ping(){
     hbFails = 0; setConn(true);
     if (!S.busy && !S.demo){
       try {
-        const v = S.stVer, m = await loadStatus();
-        if (!S.busy && v === S.stVer && stKey(m) !== stKey(S.status)){ S.status = m; renderTasks(); }
-
+        const v = S.stVer, sg = await sigOf(ST_SIG);
+        if (sg !== S.stSig){
+          const m = await loadStatus();
+          if (!S.busy && v === S.stVer){
+            S.stSig = sg;
+            if (stKey(m) !== stKey(S.status)){ S.status = m; renderTasks(); }
+            IDB.set('status', {m, sig: sg});
+          }
+        }
       } catch(e){}
+
     }
 
     if (recovered && !S.pendingCat && document.activeElement?.tagName !== 'INPUT'){
@@ -1607,7 +1674,9 @@ hbStart();
 
 (async function init(){
   renderAll();
+  IDB.get('status').then(c => { if (c && S.stSig == null && !Object.keys(S.status).length){ S.status = c.m; S.stSig = c.sig; renderTasks(); } });
   try { await loadCatalog(); renderAll(); }
+
   catch(e){ banner('Impossibile connettersi a Supabase: ' + esc(e.message) + '. Controlla la tabella e le policy (setup_articoli.sql).', 'err'); }
   try { await loadStock(); renderAll(); }
   catch(e){ banner('Impossibile leggere la giacenza: ' + esc(e.message), 'err'); }
