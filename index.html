@@ -1671,6 +1671,8 @@ window.addEventListener('online', hbStart);
 window.addEventListener('offline', () => { hbFails = 2; setConn(false); });
 hbStart();
 
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function(){});
+
 
 (async function init(){
   renderAll();
